@@ -1,18 +1,22 @@
-package ambassador
+package main
 
 import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"os"
+	"os/exec"
 	"strings"
 
 	"testing"
+	"time"
 
 	"github.com/samalba/dockerclient"
 )
 
 var bitbucketObject BitbucketPayload
+var sApplicationData ApplicationData
 
 func init() {
 	byteArray, err := ioutil.ReadFile("bitbucket.push.json")
@@ -26,12 +30,26 @@ func init() {
 	ApplicationDataPath = "./applicationDataFiles"
 
 	docker, _ = dockerclient.NewDockerClient("unix:///var/run/docker.sock", nil)
+
+	manifests := loadApplicationDataFiles()
+
+	bitbucketObject.Repository.Name = "test"
+
+	for _, manifest := range manifests {
+		if strings.ToLower(manifest.Name) == strings.ToLower(bitbucketObject.GetRepositoryName()) {
+			sApplicationData = manifest
+		}
+	}
+
+	//Start nginx
+	// nginxTest := sApplicationData
+	// nginxTest.Name = "ambassador_webserver"
+	// nginxTest.Image = "nginx:latest"
+	// runContainer(nginxTest)
 }
 func TestBitbucketPushLookup(t *testing.T) {
 
-	fmt.Println(bitbucketObject.Repository.Name)
-
-	if bitbucketObject.Repository.Name == "leonardo" {
+	if bitbucketObject.Repository.Name == "test" {
 		t.Log("Repository Name Passed")
 	}
 
@@ -74,13 +92,17 @@ func TestListContainers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cannot get containers: %s", err)
 	}
+	fmt.Print(containers)
 	if len(containers) > 0 {
 		t.Log("Success")
 	} else {
 		t.Error("Could not get any containers")
 	}
 }
-func TestExec(t *testing.T) {
+
+//TODO:Skipping till I hear an answer for
+//https://github.com/samalba/dockerclient/issues/173
+func sTestExec(t *testing.T) {
 	//var sContainer dockerclient.Container
 	var config dockerclient.ExecConfig
 	containers, err := docker.ListContainers(true, false, "")
@@ -120,29 +142,114 @@ func TestExec(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-
 	//fmt.Print(containers)
 }
-func TestRewriteConf(t *testing.T) {
-	var sApplicationData ApplicationData
-	manifests := loadApplicationDataFiles()
 
-	bitbucketObject.Repository.Name = "test"
-	var foundApp bool
-	for _, manifest := range manifests {
-		if strings.ToLower(manifest.Name) == strings.ToLower(bitbucketObject.GetRepositoryName()) {
-			foundApp = true
-			sApplicationData = manifest
+func TestRunDockerExec(t *testing.T) {
+	var containerID string
+	containers, err := docker.ListContainers(true, false, "")
+	if err != nil {
+		t.Fatalf("cannot get containers: %s", err)
+	}
+	for _, c := range containers {
+		for _, name := range c.Names {
+
+			if strings.Contains(name, WebserverDockerName) == true {
+				fmt.Println(name, WebserverDockerName)
+				containerID = c.Id
+			}
 		}
 	}
 
-	sApplicationData.IP = "1.2.3.4"
-	sApplicationData.Port = "52335"
-
-	if !foundApp {
-		t.Error("Could not find application manifest")
+	if containerID == "" {
+		t.Error("Could not find ", WebserverDockerName)
 	}
 
+	reloadCommand := exec.Command("docker", "exec", "-t", containerID, "nginx", "-s", "reload")
+	output, err := reloadCommand.CombinedOutput()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if strings.Contains(string(output), "signal process started") == true {
+		t.Log("Success")
+	} else {
+		t.Error("Error")
+	}
+}
+
+func TestProcessWait(t *testing.T) {
+	fmt.Println("Starting...", time.Now())
+	reloadCommand := exec.Command("sleep", "10")
+	_, err := reloadCommand.CombinedOutput()
+	if err != nil {
+		t.Error(err)
+	}
+	fmt.Println("Ending...", time.Now())
+
+}
+
+//Build the image and make sure the container running runs
+//only after the image is finish building
+func TestBuildImage(t *testing.T) {
+	// TODO: tried using api
+	// var reponame = "testyimage:latest"
+	// TODO: build image
+	sApplicationData.DockerfilePath = "testdockerfiledirectory"
+	sApplicationData.Image = "registry.dr-leonardo.com:5000/leonardo_hhvm_test:latest"
+
+	buildImageViaCLI(sApplicationData)
+
+	//TODO: Run Container
+	ContainerInfo := runContainer(sApplicationData)
+
+	containers, err := docker.ListContainers(true, false, "")
+	if err != nil {
+		log.Fatalf("cannot get containers: %s", err)
+	}
+	var found bool
+	//Only find applications with the same name
+	for _, c := range containers {
+		for _, name := range c.Names {
+			if strings.Contains(name, sApplicationData.Name) == true {
+				found = true
+			}
+		}
+	}
+
+	if found {
+		t.Log("Success Found Container: ", ContainerInfo.Id)
+	} else {
+		t.Error("Error running container after building image")
+	}
+}
+
+func TestMakeDockerfileTar(t *testing.T) {
+
+	path := "testdockerfiledirectory"
+
+	Makedockerfiletar(path)
+
+	if _, err := os.Stat(fmt.Sprintf("%s/%s", path, "Dockerfile.tar")); err == nil {
+		t.Log("Success")
+	} else {
+		t.Error("Dockerfile tar does not exists")
+	}
+}
+
+func TestGenContainer(t *testing.T) {
+	c := runContainer(sApplicationData)
+	fmt.Println(c.NetworkSettings.Ports)
+	var port, ip string
+	for portString, portBinding := range c.NetworkSettings.Ports {
+		if portString == "80/tcp" {
+			for _, binding := range portBinding {
+				port = binding.HostPort
+				ip = c.NetworkSettings.IPAddress
+			}
+		}
+	}
+	updateApplicationCurrentPort(&sApplicationData, c)
 	UpdateApplicationNginxConf(sApplicationData)
 
 	b, err := ioutil.ReadFile("testConf/test.conf")
@@ -150,7 +257,7 @@ func TestRewriteConf(t *testing.T) {
 		panic(err)
 	}
 
-	if strings.Contains(string(b), "1.2.3.4:52335") == false {
+	if strings.Contains(string(b), fmt.Sprintf("%s:%s", ip, port)) == false {
 		t.Error("Could not parse IP And port properly")
 	} else {
 		t.Log("Success")
@@ -174,8 +281,87 @@ func TestReadApplicationData(t *testing.T) {
 	manifests := loadApplicationDataFiles()
 	if len(manifests) > 0 {
 		t.Log("Success")
-		t.Log(manifests)
 	} else {
 		t.Error("Error")
+	}
+	fmt.Println(manifests)
+
+}
+
+func TestApplicationTest(t *testing.T) {
+	//Check for hasTest flag
+	//Build the image test docker file path
+	//Run Container
+	branchName := "testybaby"
+
+	sApplicationData.TestDockerfilepath = "testdockerfiledirectory"
+	sApplicationData.Name = "test" // Repository Name
+	sApplicationData.Image = "busybox:latest"
+	bitbucketObject.SetBranchName(branchName)
+	bitbucketObject.SetRepositoryName("test")
+	sApplicationData.Command = []string{"/bin/sh", "-c", "while :; do echo 'Hit CTRL+C'; sleep 1; done"}
+	TestApplication(&sApplicationData, bitbucketObject)
+
+	dockerFilePath := fmt.Sprintf("%s/%s", sApplicationData.DockerfilePath, "Dockerfile")
+
+	byteArray, err := ioutil.ReadFile(dockerFilePath)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if strings.Contains(string(byteArray), fmt.Sprintf("git clone -b %s", branchName)) {
+		t.Log("Success")
+	} else {
+		t.Error("Error")
+	}
+
+	containers, err := docker.ListContainers(true, false, "")
+	if err != nil {
+		t.Fatalf("cannot get containers: %s", err)
+	}
+
+	var found bool
+	for _, c := range containers {
+		for _, name := range c.Names {
+
+			if strings.Contains(name, fmt.Sprintf("%s-test-", sApplicationData.Name)) == true {
+				found = true
+			}
+		}
+	}
+
+	if found == false {
+		t.Error("Could not find container")
+	}
+}
+
+func TestStopOldContainers(t *testing.T) {
+	containerName := "reponame"
+	sApplicationData.Name = containerName
+	sApplicationData.Image = "registry:2"
+	//Run two identical containers
+	runContainer(sApplicationData)
+	cInfo := runContainer(sApplicationData)
+
+	StopOldContainers(sApplicationData, cInfo)
+
+	containers, err := docker.ListContainers(false, false, "")
+	if err != nil {
+		t.Fatalf("cannot get containers: %s", err)
+	}
+
+	containerNames := []string{}
+	for _, c := range containers {
+		for _, name := range c.Names {
+			if strings.Contains(name, containerName) == true {
+				containerNames = append(containerNames, name)
+			}
+		}
+	}
+
+	if len(containerNames) > 1 {
+		t.Error("Still numerous containers still alive")
+	} else {
+		t.Log("Success")
 	}
 }

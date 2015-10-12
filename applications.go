@@ -1,18 +1,27 @@
-package ambassador
+package main
 
-//ApplicationData is the data file type used from pull data from the filesystem
+//ApplicationData is the data file type used
+//to pull metadata from the filesystem
 type ApplicationData struct {
 	Name               string
 	Type               string
 	Repository         string
 	Image              string
 	DockerfilePath     string
+	Dockerfilename     string
 	LocalAppRepository string
+	Command            []string
 	Hostname           string
 	IP                 string
-	Port               string
+	Exposedport        string `json:"exposedport"`
+	CurrentPort        string
 	HasTest            bool
 	ConfType           string `json:"confType"`
 	TestDockerfilepath string
 	Webrootdirectory   string `json:"webrootdirectory"`
+	IsTesting          bool
+}
+
+func (app *ApplicationData) SetTestMode(mode bool) {
+	app.IsTesting = mode
 }

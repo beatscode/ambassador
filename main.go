@@ -1,6 +1,7 @@
-package ambassador
+package main
 
 import (
+	"archive/tar"
 	"bytes"
 	"encoding/json"
 	"flag"
@@ -9,9 +10,11 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"strings"
 
 	"text/template"
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/samalba/dockerclient"
@@ -19,6 +22,9 @@ import (
 
 //ApplicationDataPath
 var ApplicationDataPath string
+
+//WebserverDockerName is the name of nginx container
+const WebserverDockerName = "ambassador_webserver"
 
 //ConfDirectory houses the updated conf files
 var ConfDirectory string
@@ -28,12 +34,15 @@ func main() {
 	docker, _ = dockerclient.NewDockerClient("unix:///var/run/docker.sock", nil)
 
 	flag.StringVar(&ApplicationDataPath, "applicationDataPath", "./applicationDataFiles", "")
-	fmt.Println("Application Data Path", ApplicationDataPath)
+	log.Println("Application Data Path", ApplicationDataPath)
 	flag.StringVar(&ConfDirectory, "confDirectory", ".", "")
 	flag.Parse()
 
 	r := mux.NewRouter()
 	r.HandleFunc("/ambassador/webhookchange", AppchangeHandler).Methods("POST")
+	r.HandleFunc("/ambassador/manual", ManualchangeHandler).Methods("GET")
+	r.HandleFunc("/ambassador/manual", ManualchangeHandler).Methods("POST")
+
 	http.ListenAndServe(":9000", r)
 }
 
@@ -88,11 +97,9 @@ func loadApplicationDataFiles() []ApplicationData {
 //AppchangeHandler will take on a payload from bit bucket and process the data
 func AppchangeHandler(w http.ResponseWriter, r *http.Request) {
 
-	var foundApp = false
 	//Unmarshal into Bitbucket Payload object
 	var bitbucketObject BitbucketPayload
 	var sApplicationData ApplicationData
-
 	//Parse form and unmarshal payload
 	r.ParseForm()
 	jsonByteArray, err := json.Marshal(r.Form)
@@ -106,20 +113,68 @@ func AppchangeHandler(w http.ResponseWriter, r *http.Request) {
 		log.Print(err)
 		logit(jsonByteArray)
 	}
+	sApplicationData = findManifestByName(bitbucketObject.GetRepositoryName())
+	ExecutePayload(sApplicationData, bitbucketObject)
 
+}
+
+//ManualchangeHandler allows user to build an image and run the container manually
+func ManualchangeHandler(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	repository := r.FormValue("repository")
+	branchName := r.FormValue("branch")
+
+	if repository != "" && branchName != "" {
+		var bitbucketObject BitbucketPayload
+		bitbucketObject.SetRepositoryName(repository)
+		bitbucketObject.SetBranchName(branchName)
+		sApplicationData := findManifestByName(bitbucketObject.GetRepositoryName())
+
+		ExecutePayload(sApplicationData, bitbucketObject)
+	}
+	var data interface{}
+	t, _ := template.ParseFiles("views/manual.html")
+	t.Execute(w, data)
+}
+func findManifestByName(name string) ApplicationData {
 	//Parse Manifest Files for the appropriate application
 	manifests := loadApplicationDataFiles()
+	var sApplicationData ApplicationData
+	var foundApp = false
 
 	for _, manifest := range manifests {
-		if strings.ToLower(manifest.Name) == strings.ToLower(bitbucketObject.GetRepositoryName()) {
-			foundApp = true
+		if strings.ToLower(manifest.Name) == strings.ToLower(name) {
 			sApplicationData = manifest
+			foundApp = true
 		}
 	}
-
 	if !foundApp {
-		log.Print("Could not find manifest file for", bitbucketObject.GetRepositoryName())
+		log.Print("Could not find manifest file for ", name)
+		//return nil
+	}
+
+	return sApplicationData
+}
+
+//TestApplication tests application
+func TestApplication(sApplicationData *ApplicationData, bitbucketObject BitbucketPayload) {
+	if sApplicationData.HasTest == false {
 		return
+	}
+	//Set the mode of the application to test
+	sApplicationData.SetTestMode(true)
+
+	//Set the testdocker file path
+	sApplicationData.DockerfilePath = sApplicationData.TestDockerfilepath
+
+	ExecutePayload(*sApplicationData, bitbucketObject)
+}
+
+//ExecutePayload parses the payload and continues to processes
+func ExecutePayload(sApplicationData ApplicationData, bitbucketObject BitbucketPayload) {
+
+	if sApplicationData.HasTest && sApplicationData.IsTesting == false {
+		go TestApplication(&sApplicationData, bitbucketObject)
 	}
 
 	//TODO: Find dockerfile location
@@ -130,67 +185,296 @@ func AppchangeHandler(w http.ResponseWriter, r *http.Request) {
 
 	//TODO: Replace branch from git pull command in dockerfile
 	replacer := strings.NewReplacer("git clone -b hhvm", fmt.Sprintf("%s%s", "git clone -b ", bitbucketObject.GetBranchName()))
-	ReplaceStringInFile(sApplicationData.DockerfilePath, replacer)
+	ReplaceStringInFile(fmt.Sprintf("%s/%s", sApplicationData.DockerfilePath, "Dockerfile"), replacer)
 
 	//TODO: build image
-	dockerBuildContext, err := os.Open(sApplicationData.DockerfilePath)
-	defer dockerBuildContext.Close()
-	buildImageConfig := &dockerclient.BuildImage{
-		Context:        dockerBuildContext,
-		RepoName:       bitbucketObject.GetRepositoryName(),
-		SuppressOutput: false,
+	buildImageViaCLI(sApplicationData)
+
+	//TODO: Run Container
+	ContainerInfo := runContainer(sApplicationData)
+
+	StopOldContainers(sApplicationData, ContainerInfo)
+	//TODO: Get container ip and port
+	updateApplicationCurrentPort(&sApplicationData, ContainerInfo)
+
+	//TODO: update nginx conf
+	UpdateApplicationNginxConf(sApplicationData)
+
+	//TODO: Reload web server
+	if sApplicationData.IsTesting == false {
+		//stopOldContainers()
+		Reloadwebserver()
 	}
-	_, err = docker.BuildImage(buildImageConfig)
+}
+
+func updateApplicationCurrentPort(sApplicationData *ApplicationData, ContainerInfo *dockerclient.ContainerInfo) {
+
+	for portString, portBinding := range ContainerInfo.NetworkSettings.Ports {
+		if portString == "80/tcp" {
+			for _, binding := range portBinding {
+				sApplicationData.CurrentPort = binding.HostPort
+				sApplicationData.IP = ContainerInfo.NetworkSettings.IPAddress
+			}
+		}
+	}
+}
+
+//StopOldContainers stops old containers
+func StopOldContainers(sApplicationData ApplicationData, cInfo *dockerclient.ContainerInfo) {
+	containers, err := docker.ListContainers(true, false, "")
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("cannot get containers: %s", err)
 	}
 
+	//Only find applications with the same name
+	for _, c := range containers {
+		for _, name := range c.Names {
+			if strings.Contains(name, sApplicationData.Name) == true {
+				if cInfo.Name != name {
+					err = docker.KillContainer(c.Id, "SIGINT")
+					if err != nil {
+						log.Println("Error: ", err)
+					}
+				}
+			}
+		}
+	}
+
+	//log.Println(containerNames)
+	// r, e := regexp.Compile("\\d+")
+	// if e != nil {
+	// 	t.Error(e)
+	// }
+
+}
+func runContainer(sApplicationData ApplicationData) *dockerclient.ContainerInfo {
 	//TODO: Generate name for container
 	//TODO: Run new container
+	hostconfig := dockerclient.HostConfig{
+		PublishAllPorts: true,
+	}
 	containerConfig := &dockerclient.ContainerConfig{
 		Image:       sApplicationData.Image,
-		Cmd:         nil,
+		Cmd:         sApplicationData.Command,
 		AttachStdin: true,
-		Tty:         false}
+		Tty:         false,
+		HostConfig:  hostconfig,
+	}
+	//Make new Container Name
+	r := time.Now().UnixNano()
+	if sApplicationData.IsTesting {
+		sApplicationData.Name = fmt.Sprintf("%s-test", sApplicationData.Name)
+	}
+	ContainerName := fmt.Sprintf("%s-%d", sApplicationData.Name, r)
 
-	ContainerName := fmt.Sprintf("leo%s", sApplicationData.Name)
+	//Create Container
 	containerID, err := docker.CreateContainer(containerConfig, ContainerName)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	// Start the container
-	hostConfig := &dockerclient.HostConfig{}
-	err = docker.StartContainer(containerID, hostConfig)
+	err = docker.StartContainer(containerID, &hostconfig)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("Start Container: ", containerID, err)
 	}
+	log.Println("Container ID", containerID)
+	//Inspect the container
 	var ContainerInfo *dockerclient.ContainerInfo
 	ContainerInfo, err = docker.InspectContainer(containerID)
 	if err != nil {
 		log.Fatal(err)
 	}
+	return ContainerInfo
+}
 
-	//TODO: Get container ip and port
-	sApplicationData.IP = ContainerInfo.NetworkSettings.IPAddress
-	for _, portBindings := range ContainerInfo.NetworkSettings.Ports {
-		for _, port := range portBindings {
-			sApplicationData.Port = port.HostPort
+func buildImage(sApplication ApplicationData) {
+	//Prepare Tar file
+	//for context
+	Makedockerfiletar(sApplication.DockerfilePath)
+	// imageDelete, err := docker.RemoveImage(sApplication.Image, true)
+	// if err != nil {
+	// 	fmt.Print(err)
+	// }
+	// log.Println("Deleteing Image...", imageDelete)
+	//TODO:Make tar of dockerfile directory
+	var foundImage bool
+	dockerBuildContext, err := os.Open(fmt.Sprintf("%s/%s", sApplication.DockerfilePath, "Dockerfile.tar"))
+	//This code Makes runs asynchronously which is hard to catch
+	//When the image is ready to run
+
+	defer dockerBuildContext.Close()
+	buildImageConfig := &dockerclient.BuildImage{
+		Context:        dockerBuildContext,
+		RepoName:       sApplication.Image,
+		SuppressOutput: false,
+		DockerfileName: "Dockerfile",
+		Remove:         false,
+	}
+	_, err = docker.BuildImage(buildImageConfig)
+	if err != nil {
+		//fmt.Errorf("%s", err)
+		log.Fatal("Building Image ", err)
+	}
+	//TODO: after building the image who knows how
+	//long it will take to Finished
+	for {
+		images, err := docker.ListImages(false)
+		if err != nil {
+			fmt.Errorf("%s", err)
+		}
+		foundImage = false
+		for _, image := range images {
+			for _, tag := range image.RepoTags {
+				//log.Println(tag, sApplication.Image)
+				if tag == sApplication.Image {
+					foundImage = true
+				}
+			}
+		}
+		if foundImage == false {
+			log.Println("Error finding built image, Might still be in progress")
+		} else {
+			break
 		}
 	}
 
-	//TODO: update nginx conf
-	UpdateApplicationNginxConf(sApplicationData)
+}
+func buildImageViaCLI(sApplication ApplicationData) {
+	var foundImage bool
 
-	//Reload web server
-	Reloadwebserver()
+	pathError := os.Chdir(sApplication.DockerfilePath)
+	if pathError != nil {
+		log.Fatalln(pathError)
+	}
+
+	log.Println("Building: ", sApplication.Name)
+	log.Println("Image: ", sApplication.Image)
+	log.Println("docker", "build", "--no-cache", "-f", sApplication.Dockerfilename, "-t", sApplication.Image, ".")
+
+	//Run Build Command
+	reloadCommand := exec.Command("docker", "build", "--no-cache", "-f", sApplication.Dockerfilename, "-t", sApplication.Image, ".")
+
+	output, err := reloadCommand.CombinedOutput()
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	log.Println(string(output))
+	//Sleep for 5 seconds so that the container can be finalized by docker
+	time.Sleep(5 * time.Second)
+	//TODO: after building the image who knows how
+	//long it will take to Finished
+
+	//for {
+	images, err := docker.ListImages(false)
+	if err != nil {
+		fmt.Errorf("%s", err)
+	}
+
+	for {
+		foundImage = false
+		for _, image := range images {
+			for _, tag := range image.RepoTags {
+				log.Println(tag, sApplication.Image)
+				if tag == sApplication.Image {
+					foundImage = true
+				}
+			}
+		}
+		if foundImage == false {
+			log.Println("Error finding built image, Might still be in progress")
+		} else {
+			log.Println("Found image")
+			break
+		}
+	}
+}
+
+//Makedockerfiletar makes a tar out of a directory
+func Makedockerfiletar(path string) bool {
+	var tarMade bool
+	type fileObj struct {
+		Name, Body string
+	}
+	//Remove Existing dockerfile.tar
+	os.Remove(fmt.Sprintf("%s/%s", path, "Dockerfile.tar"))
+	var files = []fileObj{}
+
+	// Create a buffer to write our archive to.
+	buf := new(bytes.Buffer)
+
+	// Create a new tar archive.
+	tw := tar.NewWriter(buf)
+
+	dir, err := os.Open(path)
+	fileinfos, err := dir.Readdir(0)
+	if err != nil {
+		log.Fatal("Reading Directory: ", path, err)
+	}
+
+	for _, file := range fileinfos {
+		//TODO: do not add a file that is a tar
+		if strings.Contains(file.Name(), ".tar") {
+			continue
+		}
+		b, err := ioutil.ReadFile(fmt.Sprintf("%s/%s", path, file.Name()))
+		if err != nil {
+			//fmt.Print(fmt.Sprintf("%s/%s", path, file.Name()))
+			log.Fatal(err)
+			continue
+		}
+
+		//TODO turn each file into a fileObj
+		files = append(files, fileObj{
+			file.Name(),
+			string(b),
+		})
+	}
+
+	//Gather all files and write a header and body for each file
+	for _, file := range files {
+		hdr := &tar.Header{
+			Name: file.Name,
+			Mode: 0600,
+			Size: int64(len(file.Body)),
+		}
+		if err := tw.WriteHeader(hdr); err != nil {
+			log.Fatalln(err)
+		}
+		if _, err := tw.Write([]byte(file.Body)); err != nil {
+			log.Fatalln(err)
+		}
+	}
+
+	// Make sure to check the error on Close.
+	if err := tw.Close(); err != nil {
+		log.Fatalln(err)
+	}
+
+	err = ioutil.WriteFile(fmt.Sprintf("%s/%s", path, "Dockerfile.tar"), buf.Bytes(), 0644)
+	if err != nil {
+		log.Fatalln(err)
+	} else {
+		tarMade = true
+	}
+	return tarMade
 }
 
 //Reloadwebserver reloads webserver configs
 //Find the ambassador webserver container
-func Reloadwebserver() {
+func Reloadwebserver() bool {
+	var reloaded = false
 	//docker exec -it ambassador_webserver nginx -s reload
-
+	reloadCommand := exec.Command("docker", "exec", "-t", WebserverDockerName, "nginx", "-s", "reload")
+	output, err := reloadCommand.CombinedOutput()
+	if err != nil {
+		log.Fatal(err)
+	}
+	if strings.Contains(string(output), "signal process started") == true {
+		reloaded = true
+	}
+	return reloaded
 }
 
 //UpdateApplicationNginxConf exports nginx conf file with container Data
@@ -229,12 +513,12 @@ func ReplaceStringInFile(filePath string, r *strings.Replacer) string {
 	byteArray, err := ioutil.ReadFile(filePath)
 	var newString string
 	if err != nil {
-		log.Print(err)
+		log.Fatal(err)
 	}
 	newString = r.Replace(string(byteArray))
 	file, err := os.OpenFile(filePath, os.O_RDWR, 0666)
 	if err != nil {
-		log.Print("Error Opening", err)
+		log.Print("Error Opening: ", err)
 	}
 	_, err = file.WriteString(newString)
 	if err != nil {
@@ -268,4 +552,19 @@ func (payload BitbucketPayload) GetBranchName() string {
 		}
 	}
 	return branch
+}
+
+//SetRepositoryName sets repository name
+func (payload *BitbucketPayload) SetRepositoryName(name string) {
+	payload.Repository.Name = name
+}
+
+//SetBranchName sets the branch name of the bitbucket payload
+func (payload *BitbucketPayload) SetBranchName(branchName string) {
+	for idx, change := range payload.Push.Changes {
+		log.Println(change.New.Name)
+		if change.New.Name != "" {
+			payload.Push.Changes[idx].New.Name = branchName
+		}
+	}
 }

@@ -1,4 +1,4 @@
-package ambassador
+package main
 
 //NewChange is an embedded object of the change object
 type NewChange struct {

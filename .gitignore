@@ -1,6 +1,10 @@
-ambassador_linux*
+ambassador_*
+ambassador.*
 gin-bin
 testlogfile
 applicationDataFiles
 testConf
 tmpFile.txt
+.DS_Store
+*.tar
+testdockerfiledirectory
