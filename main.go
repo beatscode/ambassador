@@ -105,7 +105,9 @@ func AppchangeHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Print(err)
 	}
-	log.Println("Form Body", string(jsonByteArray))
+	log.Println("Form Body", r.Form)
+	log.Println("Request Header", r.Header)
+	log.Println("Json Body", string(jsonByteArray))
 	//parses the JSON-encoded data
 	err = json.Unmarshal(jsonByteArray, &bitbucketObject)
 	if err != nil {
