@@ -105,15 +105,20 @@ func AppchangeHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Print(err)
 	}
-
+	log.Println("Form Body", string(jsonByteArray))
 	//parses the JSON-encoded data
 	err = json.Unmarshal(jsonByteArray, &bitbucketObject)
 	if err != nil {
 		log.Print(err)
 		logit(jsonByteArray)
 	}
+
+	log.Println("bitbucketObject", bitbucketObject)
 	sApplicationData = findManifestByName(bitbucketObject.GetRepositoryName())
-	ExecutePayload(sApplicationData, bitbucketObject)
+	log.Println("sApplicationData", sApplicationData)
+	if &sApplicationData == nil {
+		ExecutePayload(sApplicationData, bitbucketObject)
+	}
 
 }
 
