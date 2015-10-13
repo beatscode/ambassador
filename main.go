@@ -34,7 +34,6 @@ func main() {
 	docker, _ = dockerclient.NewDockerClient("unix:///var/run/docker.sock", nil)
 
 	flag.StringVar(&ApplicationDataPath, "applicationDataPath", "./applicationDataFiles", "")
-	log.Println("Application Data Path", ApplicationDataPath)
 	flag.StringVar(&ConfDirectory, "confDirectory", ".", "")
 	flag.Parse()
 
@@ -133,8 +132,21 @@ func ManualchangeHandler(w http.ResponseWriter, r *http.Request) {
 		ExecutePayload(sApplicationData, bitbucketObject)
 	}
 	var data interface{}
-	t, _ := template.ParseFiles("views/manual.html")
-	t.Execute(w, data)
+
+	fmt.Fprint(w, `<h1>Manually Starting Images</h1>
+
+	<form action="/ambassador/manual" method="POST">
+	<div>
+	    <h3>Repository Name</h3>
+	    <input type="text" name="repository" value="">
+	    <h3>Branch Name</h3>
+	    <input type="text" name="branch" value="">
+	    <br>
+	<div><input type="submit" value="Submit"></div>
+	</form>
+`, data)
+	//t, _ := template.ParseFiles("views/manual.go")
+	//t.Execute(w, data)
 }
 func findManifestByName(name string) ApplicationData {
 	//Parse Manifest Files for the appropriate application
@@ -321,7 +333,7 @@ func buildImage(sApplication ApplicationData) {
 	for {
 		images, err := docker.ListImages(false)
 		if err != nil {
-			fmt.Errorf("%s", err)
+			log.Println(err)
 		}
 		foundImage = false
 		for _, image := range images {
@@ -369,7 +381,7 @@ func buildImageViaCLI(sApplication ApplicationData) {
 	//for {
 	images, err := docker.ListImages(false)
 	if err != nil {
-		fmt.Errorf("%s", err)
+		log.Println(err)
 	}
 
 	for {
