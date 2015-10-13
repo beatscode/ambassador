@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 
 	"text/template"
@@ -99,26 +100,18 @@ func AppchangeHandler(w http.ResponseWriter, r *http.Request) {
 	//Unmarshal into Bitbucket Payload object
 	var bitbucketObject BitbucketPayload
 	var sApplicationData ApplicationData
-	//Parse form and unmarshal payload
-	r.ParseForm()
-	jsonByteArray, err := json.Marshal(r.Form)
-	if err != nil {
-		log.Print(err)
-	}
-	log.Println("Form Body", r.Form)
-	log.Println("Request Header", r.Header)
-	log.Println("Json Body", string(jsonByteArray))
-	//parses the JSON-encoded data
-	err = json.Unmarshal(jsonByteArray, &bitbucketObject)
-	if err != nil {
-		log.Print(err)
-		logit(jsonByteArray)
-	}
 
+	err := json.NewDecoder(r.Body).Decode(&bitbucketObject)
+	if err != nil {
+		log.Print(err)
+	}
+	log.Println("Form Body", r.Body)
+	log.Println("Request Header", r.Header)
 	log.Println("bitbucketObject", bitbucketObject)
+
 	sApplicationData = findManifestByName(bitbucketObject.GetRepositoryName())
 	log.Println("sApplicationData", sApplicationData)
-	if &sApplicationData == nil {
+	if &sApplicationData != nil {
 		ExecutePayload(sApplicationData, bitbucketObject)
 	}
 
@@ -184,9 +177,21 @@ func TestApplication(sApplicationData *ApplicationData, bitbucketObject Bitbucke
 	sApplicationData.SetTestMode(true)
 
 	//Set the testdocker file path
+
 	sApplicationData.DockerfilePath = sApplicationData.TestDockerfilepath
 
 	ExecutePayload(*sApplicationData, bitbucketObject)
+}
+
+func getImageFromDockerfile(filePath string) string {
+	byteArray, err := ioutil.ReadFile(filePath)
+	if err != nil {
+		log.Println("getImageFromFile Error: ", err)
+	}
+
+	r, err := regexp.Compile("[^FROM\\s](\\S+)")
+	imageByteArray := r.Find(byteArray)
+	return string(imageByteArray)
 }
 
 //ExecutePayload parses the payload and continues to processes
@@ -366,7 +371,10 @@ func buildImageViaCLI(sApplication ApplicationData) {
 	if pathError != nil {
 		log.Fatalln(pathError)
 	}
-
+	//Set the testing docker image as the current image
+	if sApplication.HasTest && sApplication.IsTesting {
+		sApplication.Image = getImageFromDockerfile(sApplication.TestDockerfilepath)
+	}
 	log.Println("Building: ", sApplication.Name)
 	log.Println("Image: ", sApplication.Image)
 	log.Println("docker", "build", "--no-cache", "-f", sApplication.Dockerfilename, "-t", sApplication.Image, ".")

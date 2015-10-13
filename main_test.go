@@ -288,6 +288,17 @@ func TestReadApplicationData(t *testing.T) {
 
 }
 
+func TestReadTestImage(t *testing.T) {
+
+	imageName := getImageFromFile("testdockerfiledirectory/Dockerfile.busybox")
+
+	if imageName == "busybox" {
+		t.Log("Success")
+	} else {
+		t.Error("Failed to find correct image", imageName)
+	}
+
+}
 func TestApplicationTest(t *testing.T) {
 	//Check for hasTest flag
 	//Build the image test docker file path
