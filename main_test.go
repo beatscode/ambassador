@@ -290,7 +290,7 @@ func TestReadApplicationData(t *testing.T) {
 
 func TestReadTestImage(t *testing.T) {
 
-	imageName := getImageFromFile("testdockerfiledirectory/Dockerfile.busybox")
+	imageName := getImageFromDockerfile("testdockerfiledirectory/Dockerfile.busybox")
 
 	if imageName == "busybox" {
 		t.Log("Success")

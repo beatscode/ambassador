@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path"
 	"regexp"
 	"strings"
 
@@ -373,14 +374,16 @@ func buildImageViaCLI(sApplication ApplicationData) {
 	}
 	//Set the testing docker image as the current image
 	if sApplication.HasTest && sApplication.IsTesting {
-		sApplication.Image = getImageFromDockerfile(sApplication.TestDockerfilepath)
+		sApplication.Image = getImageFromDockerfile(fmt.Sprintf("%s/Dockerfile", sApplication.TestDockerfilepath))
 	}
+	log.Println("Current Directory", sApplication.DockerfilePath)
 	log.Println("Building: ", sApplication.Name)
 	log.Println("Image: ", sApplication.Image)
 	log.Println("docker", "build", "--no-cache", "-f", sApplication.Dockerfilename, "-t", sApplication.Image, ".")
 
+	imageName := path.Base(sApplication.DockerfilePath)
 	//Run Build Command
-	reloadCommand := exec.Command("docker", "build", "--no-cache", "-f", sApplication.Dockerfilename, "-t", sApplication.Image, ".")
+	reloadCommand := exec.Command("docker", "build", "--no-cache", "-f", sApplication.Dockerfilename, "-t", imageName, ".")
 
 	output, err := reloadCommand.CombinedOutput()
 	if err != nil {
@@ -404,7 +407,7 @@ func buildImageViaCLI(sApplication ApplicationData) {
 		for _, image := range images {
 			for _, tag := range image.RepoTags {
 				log.Println(tag, sApplication.Image)
-				if tag == sApplication.Image {
+				if tag == sApplication.Image || tag == fmt.Sprintf("%s:latest", sApplication.Image) {
 					foundImage = true
 				}
 			}
