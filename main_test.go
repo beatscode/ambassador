@@ -337,6 +337,19 @@ func TestReadTestImage(t *testing.T) {
 	}
 
 }
+
+func TestManualBitbucket(t *testing.T) {
+	branchName := "testybaby"
+	var bb = NewBitbucketPayload()
+	bb.SetBranchName(branchName)
+	bb.SetRepositoryName("test")
+	if bb.GetBranchName() != branchName {
+		t.Error("Wrong BranchName", bb.GetBranchName())
+	}
+	if bb.GetRepositoryName() != "test" {
+		t.Error("Invalid Repository Name")
+	}
+}
 func TestApplicationTest(t *testing.T) {
 	//Check for hasTest flag
 	//Build the image test docker file path

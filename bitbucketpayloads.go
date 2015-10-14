@@ -57,3 +57,45 @@ type BitbucketPayload struct {
 	Push        Push        `json:"push"`
 	Pullrequest Pullrequest `json:"pullrequest"`
 }
+
+//GetRepositoryName should return the name of the git repository name
+func (payload BitbucketPayload) GetRepositoryName() string {
+	return payload.Repository.Name
+}
+
+//GetBranchName will return the branch name of the newest change
+func (payload BitbucketPayload) GetBranchName() string {
+	var branch string
+	for _, change := range payload.Push.Changes {
+		if change.New.Name != "" {
+			branch = change.New.Name
+		}
+	}
+	return branch
+}
+
+//SetRepositoryName sets repository name
+func (payload *BitbucketPayload) SetRepositoryName(name string) {
+	payload.Repository.Name = name
+}
+
+//NewBitbucketPayload returns a new bitbucket
+func NewBitbucketPayload() BitbucketPayload {
+	var bb BitbucketPayload
+	var push Push
+	var changes []Change
+	var newChange NewChange
+	changes = append(changes, Change{
+		New: newChange,
+	})
+	push.Changes = changes
+	bb.Push = push
+	return bb
+}
+
+//SetBranchName sets the branch name of the bitbucket payload
+func (payload *BitbucketPayload) SetBranchName(branchName string) {
+	for idx := range payload.Push.Changes {
+		payload.Push.Changes[idx].New.Name = branchName
+	}
+}

@@ -131,11 +131,14 @@ func ManualchangeHandler(w http.ResponseWriter, r *http.Request) {
 	branchName := r.FormValue("branch")
 
 	if repository != "" && branchName != "" {
-		var bitbucketObject BitbucketPayload
+		var bitbucketObject = NewBitbucketPayload()
 		bitbucketObject.SetRepositoryName(repository)
 		bitbucketObject.SetBranchName(branchName)
 		sApplicationData := findManifestByName(bitbucketObject.GetRepositoryName())
-		log.Println("Manual Change", sApplicationData, bitbucketObject)
+
+		log.Println("ApplicationData", sApplicationData)
+		log.Println("bitbucket", bitbucketObject)
+
 		if &sApplicationData != nil {
 			ExecutePayload(sApplicationData, bitbucketObject)
 		}
@@ -225,8 +228,9 @@ func ExecutePayload(sApplicationData ApplicationData, bitbucketObject BitbucketP
 	//However the dockerfile is git managed and we don't want
 	//to change this forever
 	//We need to copy the file and update that file
-	replacer := strings.NewReplacer("git clone -b hhvm",
-		fmt.Sprintf("%s%s", "git clone -b ", bitbucketObject.GetBranchName()))
+	currentBranch := fmt.Sprintf("%s%s", "git clone -b ", bitbucketObject.GetBranchName())
+	log.Println("Current Branch: ", currentBranch)
+	replacer := strings.NewReplacer("git clone -b hhvm", currentBranch)
 	ReplaceStringInFile(replacer, &sApplicationData)
 
 	//TODO: build image
@@ -282,16 +286,13 @@ func StopOldContainers(sApplicationData ApplicationData, cInfo *dockerclient.Con
 			}
 		}
 	}
-
-	//log.Println(containerNames)
-	// r, e := regexp.Compile("\\d+")
-	// if e != nil {
-	// 	t.Error(e)
-	// }
-
 }
 func runContainer(sApplicationData ApplicationData) *dockerclient.ContainerInfo {
-
+	defer func() {
+		if r := recover(); r != nil {
+			log.Println("Recovered from runContainer", sApplicationData.Name, r)
+		}
+	}()
 	//TODO: Generate name for container
 	//TODO: Run new container
 	hostconfig := dockerclient.HostConfig{
@@ -316,20 +317,20 @@ func runContainer(sApplicationData ApplicationData) *dockerclient.ContainerInfo 
 	//Create Container
 	containerID, err := docker.CreateContainer(containerConfig, ContainerName)
 	if err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
 
 	// Start the container
 	err = docker.StartContainer(containerID, &hostconfig)
 	if err != nil {
-		log.Fatal("Start Container: ", containerID, err)
+		panic(err)
 	}
 	log.Println("Starting Container Name: ", ContainerName, " ID: ", containerID)
 	//Inspect the container
 	var ContainerInfo *dockerclient.ContainerInfo
 	ContainerInfo, err = docker.InspectContainer(containerID)
 	if err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
 	return ContainerInfo
 }
@@ -399,7 +400,7 @@ func buildImageViaCLI(sApplication *ApplicationData) {
 	}()
 	pathError := os.Chdir(sApplication.DockerfilePath)
 	if pathError != nil {
-		log.Fatalln(pathError)
+		panic(pathError)
 	}
 	//Set the testing docker image as the current image
 	// if sApplication.HasTest && sApplication.IsTesting {
@@ -522,8 +523,15 @@ func Makedockerfiletar(path string) bool {
 //Reloadwebserver reloads webserver configs
 //Find the ambassador webserver container
 func Reloadwebserver() bool {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Println("Panic Occured in ReloadWebserver")
+			log.Println(r)
+		}
+	}()
 	var reloaded = false
 	//docker exec -it ambassador_webserver nginx -s reload
+	log.Println("docker", "exec", "-t", WebserverDockerName, "nginx", "-s", "reload")
 	reloadCommand := exec.Command("docker", "exec", "-t", WebserverDockerName, "nginx", "-s", "reload")
 	output, err := reloadCommand.CombinedOutput()
 	if err != nil {
@@ -625,36 +633,4 @@ func logit(jsonByteArray []byte) {
 	defer f.Close()
 	log.SetOutput(f)
 	log.Println(string(jsonByteArray))
-}
-
-//GetRepositoryName should return the name of the git repository name
-func (payload BitbucketPayload) GetRepositoryName() string {
-	return payload.Repository.Name
-}
-
-//GetBranchName will return the branch name of the newest change
-func (payload BitbucketPayload) GetBranchName() string {
-	var branch string
-	for _, change := range payload.Push.Changes {
-		//fmt.Print(k, change.New.Name)
-		if change.New.Name != "" {
-			branch = change.New.Name
-		}
-	}
-	return branch
-}
-
-//SetRepositoryName sets repository name
-func (payload *BitbucketPayload) SetRepositoryName(name string) {
-	payload.Repository.Name = name
-}
-
-//SetBranchName sets the branch name of the bitbucket payload
-func (payload *BitbucketPayload) SetBranchName(branchName string) {
-	for idx, change := range payload.Push.Changes {
-		log.Println(change.New.Name)
-		if change.New.Name != "" {
-			payload.Push.Changes[idx].New.Name = branchName
-		}
-	}
 }
