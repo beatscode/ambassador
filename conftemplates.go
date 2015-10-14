@@ -4,9 +4,7 @@ var phpserverconf = string(`server {
     listen 80;
     server_name {{ .Hostname }};
     keepalive_timeout   70;
-    #access_log logs/leonardo.access.log;
-    root {{ .Webrootdirectory }}
-    #root /var/www/leonardo/public;
+    root {{ .Webrootdirectory }};
 
     try_files $uri $uri/ /index.php$uri /index.php?$args;
 

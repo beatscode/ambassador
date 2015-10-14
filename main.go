@@ -535,7 +535,7 @@ func Reloadwebserver() bool {
 	reloadCommand := exec.Command("docker", "exec", "-t", WebserverDockerName, "nginx", "-s", "reload")
 	output, err := reloadCommand.CombinedOutput()
 	if err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
 	if strings.Contains(string(output), "signal process started") == true {
 		reloaded = true
