@@ -57,8 +57,8 @@ func loadApplicationDataFiles() []ApplicationData {
 	if e != nil {
 		log.Fatalf("error opening file: %v", e)
 	}
-
 	defer f.Close()
+
 	files, e := f.Readdir(0)
 	var buffer bytes.Buffer
 	for _, tmpFile := range files {
@@ -170,7 +170,7 @@ func findManifestByName(name string) ApplicationData {
 }
 
 //TestApplication tests application
-func TestApplication(sApplicationData *ApplicationData, bitbucketObject BitbucketPayload) {
+func TestApplication(sApplicationData ApplicationData, bitbucketObject BitbucketPayload) {
 	if sApplicationData.HasTest == false {
 		return
 	}
@@ -181,7 +181,7 @@ func TestApplication(sApplicationData *ApplicationData, bitbucketObject Bitbucke
 
 	sApplicationData.DockerfilePath = sApplicationData.TestDockerfilepath
 
-	ExecutePayload(*sApplicationData, bitbucketObject)
+	ExecutePayload(sApplicationData, bitbucketObject)
 }
 
 func getImageFromDockerfile(filePath string) string {
@@ -199,7 +199,7 @@ func getImageFromDockerfile(filePath string) string {
 func ExecutePayload(sApplicationData ApplicationData, bitbucketObject BitbucketPayload) {
 
 	if sApplicationData.HasTest && sApplicationData.IsTesting == false {
-		go TestApplication(&sApplicationData, bitbucketObject)
+		go TestApplication(sApplicationData, bitbucketObject)
 	}
 
 	//TODO: Find dockerfile location
@@ -213,7 +213,7 @@ func ExecutePayload(sApplicationData ApplicationData, bitbucketObject BitbucketP
 	ReplaceStringInFile(fmt.Sprintf("%s/%s", sApplicationData.DockerfilePath, "Dockerfile"), replacer)
 
 	//TODO: build image
-	buildImageViaCLI(sApplicationData)
+	buildImageViaCLI(&sApplicationData)
 
 	//TODO: Run Container
 	ContainerInfo := runContainer(sApplicationData)
@@ -235,7 +235,7 @@ func ExecutePayload(sApplicationData ApplicationData, bitbucketObject BitbucketP
 func updateApplicationCurrentPort(sApplicationData *ApplicationData, ContainerInfo *dockerclient.ContainerInfo) {
 
 	for portString, portBinding := range ContainerInfo.NetworkSettings.Ports {
-		if portString == "80/tcp" {
+		if portString == sApplicationData.Exposedport {
 			for _, binding := range portBinding {
 				sApplicationData.CurrentPort = binding.HostPort
 				sApplicationData.IP = ContainerInfo.NetworkSettings.IPAddress
@@ -256,6 +256,7 @@ func StopOldContainers(sApplicationData ApplicationData, cInfo *dockerclient.Con
 		for _, name := range c.Names {
 			if strings.Contains(name, sApplicationData.Name) == true {
 				if cInfo.Name != name {
+					log.Println("Killing: ", sApplicationData.Name, " ID: ", c.Id, " IMAGE: ", c.Image)
 					err = docker.KillContainer(c.Id, "SIGINT")
 					if err != nil {
 						log.Println("Error: ", err)
@@ -273,6 +274,7 @@ func StopOldContainers(sApplicationData ApplicationData, cInfo *dockerclient.Con
 
 }
 func runContainer(sApplicationData ApplicationData) *dockerclient.ContainerInfo {
+
 	//TODO: Generate name for container
 	//TODO: Run new container
 	hostconfig := dockerclient.HostConfig{
@@ -303,7 +305,7 @@ func runContainer(sApplicationData ApplicationData) *dockerclient.ContainerInfo 
 	if err != nil {
 		log.Fatal("Start Container: ", containerID, err)
 	}
-	log.Println("Container ID", containerID)
+	log.Println("Starting Container Name: ", ContainerName, " ID: ", containerID)
 	//Inspect the container
 	var ContainerInfo *dockerclient.ContainerInfo
 	ContainerInfo, err = docker.InspectContainer(containerID)
@@ -314,6 +316,11 @@ func runContainer(sApplicationData ApplicationData) *dockerclient.ContainerInfo 
 }
 
 func buildImage(sApplication ApplicationData) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Println("Recovered Building Image", sApplication.Name, r)
+		}
+	}()
 	//Prepare Tar file
 	//for context
 	Makedockerfiletar(sApplication.DockerfilePath)
@@ -365,30 +372,33 @@ func buildImage(sApplication ApplicationData) {
 	}
 
 }
-func buildImageViaCLI(sApplication ApplicationData) {
-	var foundImage bool
-
+func buildImageViaCLI(sApplication *ApplicationData) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Println("Recovered from Building Image", sApplication.Name, r)
+		}
+	}()
 	pathError := os.Chdir(sApplication.DockerfilePath)
 	if pathError != nil {
 		log.Fatalln(pathError)
 	}
 	//Set the testing docker image as the current image
-	if sApplication.HasTest && sApplication.IsTesting {
-		sApplication.Image = getImageFromDockerfile(fmt.Sprintf("%s/Dockerfile", sApplication.TestDockerfilepath))
-	}
+	// if sApplication.HasTest && sApplication.IsTesting {
+	// 	sApplication.Image = getImageFromDockerfile(fmt.Sprintf("%s/Dockerfile", sApplication.TestDockerfilepath))
+	// }
 
 	//Get the folder that houses the current dockerfile
 	//Lets name the image this name
-	imageName := path.Base(sApplication.DockerfilePath)
+	sApplication.Image = path.Base(sApplication.DockerfilePath)
 
 	log.Println("Current Directory", sApplication.DockerfilePath)
 	log.Println("Building: ", sApplication.Name)
 	log.Println("Image: ", sApplication.Image)
-	log.Println("docker", "build", "--no-cache", "-f", sApplication.Dockerfilename, "-t", imageName, ".")
+	log.Println("docker", "build", "--no-cache", "-f", sApplication.Dockerfilename, "-t", sApplication.Image, ".")
 
 	//Run Build Command
 	//Name the image different than the image to stop conflicting with registry images
-	reloadCommand := exec.Command("docker", "build", "--no-cache", "-f", sApplication.Dockerfilename, "-t", imageName, ".")
+	reloadCommand := exec.Command("docker", "build", "--no-cache", "-f", sApplication.Dockerfilename, "-t", sApplication.Image, ".")
 
 	output, err := reloadCommand.CombinedOutput()
 	if err != nil {
@@ -401,27 +411,19 @@ func buildImageViaCLI(sApplication ApplicationData) {
 	//TODO: after building the image who knows how
 	//long it will take to Finished
 
-	//for {
 	images, err := docker.ListImages(false)
 	if err != nil {
 		log.Println(err)
 	}
-
+forever_loop:
 	for {
-		foundImage = false
 		for _, image := range images {
 			for _, tag := range image.RepoTags {
-				log.Println(tag, imageName)
-				if tag == imageName || tag == fmt.Sprintf("%s:latest", imageName) {
-					foundImage = true
+				if tag == sApplication.Image || tag == fmt.Sprintf("%s:latest", sApplication.Image) {
+					log.Println("Found image", tag, sApplication.Image)
+					break forever_loop
 				}
 			}
-		}
-		if foundImage == false {
-			log.Println("Error finding built image, Might still be in progress")
-		} else {
-			log.Println("Found image")
-			break
 		}
 	}
 }
@@ -443,6 +445,7 @@ func Makedockerfiletar(path string) bool {
 	tw := tar.NewWriter(buf)
 
 	dir, err := os.Open(path)
+	defer dir.Close()
 	fileinfos, err := dir.Readdir(0)
 	if err != nil {
 		log.Fatal("Reading Directory: ", path, err)
@@ -555,6 +558,8 @@ func ReplaceStringInFile(filePath string, r *strings.Replacer) string {
 	if err != nil {
 		log.Print("Error Opening: ", err)
 	}
+	defer file.Close()
+
 	_, err = file.WriteString(newString)
 	if err != nil {
 		log.Print("Error Writing", err)

@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"testing"
-	"time"
 
 	"github.com/samalba/dockerclient"
 )
@@ -178,17 +177,6 @@ func TestRunDockerExec(t *testing.T) {
 	}
 }
 
-func TestProcessWait(t *testing.T) {
-	fmt.Println("Starting...", time.Now())
-	reloadCommand := exec.Command("sleep", "10")
-	_, err := reloadCommand.CombinedOutput()
-	if err != nil {
-		t.Error(err)
-	}
-	fmt.Println("Ending...", time.Now())
-
-}
-
 //Build the image and make sure the container running runs
 //only after the image is finish building
 func TestBuildImage(t *testing.T) {
@@ -196,9 +184,9 @@ func TestBuildImage(t *testing.T) {
 	// var reponame = "testyimage:latest"
 	// TODO: build image
 	sApplicationData.DockerfilePath = "testdockerfiledirectory"
-	sApplicationData.Image = "registry.dr-leonardo.com:5000/leonardo_hhvm_test:latest"
-
-	buildImageViaCLI(sApplicationData)
+	sApplicationData.Image = "busybox"
+	sApplicationData.Dockerfilename = "Dockerfile.busybox"
+	buildImageViaCLI(&sApplicationData)
 
 	//TODO: Run Container
 	ContainerInfo := runContainer(sApplicationData)
@@ -306,12 +294,13 @@ func TestApplicationTest(t *testing.T) {
 	branchName := "testybaby"
 
 	sApplicationData.TestDockerfilepath = "testdockerfiledirectory"
+	sApplicationData.Dockerfilename = "Dockerfile.busybox"
 	sApplicationData.Name = "test" // Repository Name
 	sApplicationData.Image = "busybox:latest"
 	bitbucketObject.SetBranchName(branchName)
 	bitbucketObject.SetRepositoryName("test")
 	sApplicationData.Command = []string{"/bin/sh", "-c", "while :; do echo 'Hit CTRL+C'; sleep 1; done"}
-	TestApplication(&sApplicationData, bitbucketObject)
+	TestApplication(sApplicationData, bitbucketObject)
 
 	dockerFilePath := fmt.Sprintf("%s/%s", sApplicationData.DockerfilePath, "Dockerfile")
 
