@@ -1,4 +1,6 @@
-server {
+package main
+
+var phpserverconf = string(`server {
     listen 80;
     server_name {{ .Hostname }};
     keepalive_timeout   70;
@@ -32,4 +34,18 @@ server {
        fastcgi_param  PATH_INFO               $fastcgi_path_info;
        include        fastcgi_params;
     }
-}
+}`)
+
+var golangconf = string(`server {
+    listen 80;
+    server_name {{ .Hostname }};
+
+    try_files $uri $uri/;
+
+    location / {
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header Host $host;
+        proxy_pass {{ .IP }}:{{ .CurrentPort }};
+    }
+}`)

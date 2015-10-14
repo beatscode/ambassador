@@ -15,8 +15,9 @@ import (
 	"regexp"
 	"strings"
 
-	"text/template"
 	"time"
+
+	"text/template"
 
 	"github.com/gorilla/mux"
 	"github.com/samalba/dockerclient"
@@ -221,8 +222,12 @@ func ExecutePayload(sApplicationData ApplicationData, bitbucketObject BitbucketP
 	}
 
 	//TODO: Replace branch from git pull command in dockerfile
-	replacer := strings.NewReplacer("git clone -b hhvm", fmt.Sprintf("%s%s", "git clone -b ", bitbucketObject.GetBranchName()))
-	ReplaceStringInFile(fmt.Sprintf("%s/%s", sApplicationData.DockerfilePath, "Dockerfile"), replacer)
+	//However the dockerfile is git managed and we don't want
+	//to change this forever
+	//We need to copy the file and update that file
+	replacer := strings.NewReplacer("git clone -b hhvm",
+		fmt.Sprintf("%s%s", "git clone -b ", bitbucketObject.GetBranchName()))
+	ReplaceStringInFile(replacer, &sApplicationData)
 
 	//TODO: build image
 	buildImageViaCLI(&sApplicationData)
@@ -416,7 +421,7 @@ func buildImageViaCLI(sApplication *ApplicationData) {
 
 	output, err := reloadCommand.CombinedOutput()
 	if err != nil {
-		log.Fatalln(err)
+		panic(err)
 	}
 
 	log.Println(string(output))
@@ -440,6 +445,7 @@ forever_loop:
 			}
 		}
 	}
+	removeTmpDockerfile(sApplication)
 }
 
 //Makedockerfiletar makes a tar out of a directory
@@ -532,17 +538,23 @@ func Reloadwebserver() bool {
 //UpdateApplicationNginxConf exports nginx conf file with container Data
 //for a specific application
 func UpdateApplicationNginxConf(sApplicationData ApplicationData) {
-	t := template.New("Conf Template")
-	t.ParseGlob("conf_templates/*.conf")
-	t, err := t.Parse(sApplicationData.ConfType)
-	if err != nil {
-		log.Fatal(err)
-	}
+
+	var err error
+	var t = template.New("nginx Conf")
 	//TODO: write out new nginx to webserver location
 	buff := bytes.NewBufferString("")
+	switch sApplicationData.ConfType {
+	case "phpserverconf":
+		t.Parse(phpserverconf)
+	case "golangconf":
+		t.Parse(golangconf)
+	}
 
+	err = t.Execute(buff, sApplicationData)
 	//Write template to buffer
-	t.ExecuteTemplate(buff, "phpserver.conf", sApplicationData)
+	if err != nil {
+		log.Println("Error executing Template", err)
+	}
 
 	//Find filepath to export new conf file
 	filePath := fmt.Sprintf("%s/%s.conf", ConfDirectory, sApplicationData.Name)
@@ -558,17 +570,41 @@ func UpdateApplicationNginxConf(sApplicationData ApplicationData) {
 		log.Fatal("Error Writing", err)
 	}
 }
+func removeTmpDockerfile(sApplicationData *ApplicationData) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Println("Could Not Remove Tmp Docker File", r)
+		}
+	}()
+
+	if strings.Contains(sApplicationData.Dockerfilename, "tmp") == true {
+		tmpFilepath := fmt.Sprintf("%s/%s", sApplicationData.DockerfilePath, sApplicationData.Dockerfilename)
+		log.Println("Removing ", tmpFilepath)
+		err := os.Remove(tmpFilepath)
+		if err != nil {
+			panic(err)
+		}
+	}
+}
 
 //ReplaceStringInFile replaces string inside file
 //used to replace string inside docker file
-func ReplaceStringInFile(filePath string, r *strings.Replacer) string {
-	byteArray, err := ioutil.ReadFile(filePath)
+func ReplaceStringInFile(r *strings.Replacer, sApplicationData *ApplicationData) string {
+	//Read in the master docker file for this application
+	filepath := fmt.Sprintf("%s/%s", sApplicationData.DockerfilePath, sApplicationData.Dockerfilename)
+	//Change the dockerFileName to the tmp version
+	//Later we will use this value for building
+	sApplicationData.Dockerfilename = fmt.Sprintf("tmp%s", sApplicationData.Dockerfilename)
+	tmpFilePath := fmt.Sprintf("%s/%s", sApplicationData.DockerfilePath, sApplicationData.Dockerfilename)
+	byteArray, err := ioutil.ReadFile(filepath)
+
 	var newString string
 	if err != nil {
 		log.Fatal(err)
 	}
 	newString = r.Replace(string(byteArray))
-	file, err := os.OpenFile(filePath, os.O_RDWR, 0666)
+
+	file, err := os.OpenFile(tmpFilePath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
 		log.Print("Error Opening: ", err)
 	}

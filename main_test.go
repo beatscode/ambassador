@@ -74,7 +74,7 @@ func TestReplaceStringInFile(t *testing.T) {
 	f.WriteString("git clone -b hhvm")
 
 	replacer := strings.NewReplacer("git clone -b hhvm", fmt.Sprintf("%s", "git clone -b newbranch"))
-	s := ReplaceStringInFile(filePath, replacer)
+	s := ReplaceStringInFile(replacer, &sApplicationData)
 
 	if s == "git clone -b newbranch" {
 		t.Log("Success")
@@ -177,6 +177,40 @@ func TestRunDockerExec(t *testing.T) {
 	}
 }
 
+func TestTmpDockerfile(t *testing.T) {
+	sApplicationData.DockerfilePath = "testdockerfiledirectory"
+	sApplicationData.Image = "busybox"
+	sApplicationData.Dockerfilename = "Dockerfile.busybox"
+	newBranchString := fmt.Sprintf("%s%s", "git clone -b ", bitbucketObject.GetBranchName())
+	replacer := strings.NewReplacer("git clone -b testybaby",
+		newBranchString)
+
+	ReplaceStringInFile(replacer, &sApplicationData)
+
+	tmpfilepath := fmt.Sprintf("%s/%s", sApplicationData.DockerfilePath, sApplicationData.Dockerfilename)
+	if strings.Contains(sApplicationData.Dockerfilename, "tmp") != true {
+		t.Error("Dockerfilename was not changed properly")
+	}
+	if _, err := os.Stat(fmt.Sprintf("%s/%s", sApplicationData.DockerfilePath, sApplicationData.Dockerfilename)); os.IsNotExist(err) {
+		t.Error("tmpDockerfile was not created")
+	}
+
+	//Check that the branch was changed
+	byteArray, _ := ioutil.ReadFile(tmpfilepath)
+	if strings.Contains(string(byteArray), newBranchString) {
+		t.Log("Success")
+	} else {
+		t.Error("Could not find new branch replacement in dockerfile")
+	}
+
+	removeTmpDockerfile(&sApplicationData)
+	if _, err := os.Stat(fmt.Sprintf("%s/%s", sApplicationData.DockerfilePath, sApplicationData.Dockerfilename)); os.IsNotExist(err) {
+		t.Log("Success")
+	} else {
+		t.Error("tmpDockerFile still exists after attempted removal")
+	}
+}
+
 //Build the image and make sure the container running runs
 //only after the image is finish building
 func TestBuildImage(t *testing.T) {
@@ -186,6 +220,7 @@ func TestBuildImage(t *testing.T) {
 	sApplicationData.DockerfilePath = "testdockerfiledirectory"
 	sApplicationData.Image = "busybox"
 	sApplicationData.Dockerfilename = "Dockerfile.busybox"
+
 	buildImageViaCLI(&sApplicationData)
 
 	//TODO: Run Container
@@ -245,7 +280,7 @@ func TestGenContainer(t *testing.T) {
 	}
 	var port, ip string
 	for portString, portBinding := range c.NetworkSettings.Ports {
-		if portString == "80/tcp" {
+		if portString == sApplicationData.Exposedport {
 			for _, binding := range portBinding {
 				port = binding.HostPort
 				ip = c.NetworkSettings.IPAddress
