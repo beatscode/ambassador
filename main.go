@@ -228,10 +228,8 @@ func ExecutePayload(sApplicationData ApplicationData, bitbucketObject BitbucketP
 	//However the dockerfile is git managed and we don't want
 	//to change this forever
 	//We need to copy the file and update that file
-	currentBranch := fmt.Sprintf("%s%s", "git clone -b ", bitbucketObject.GetBranchName())
-	log.Println("Current Branch: ", currentBranch)
-	replacer := strings.NewReplacer("git clone -b hhvm", currentBranch)
-	ReplaceStringInFile(replacer, &sApplicationData)
+
+	ReplaceStringInFile(&sApplicationData, bitbucketObject)
 
 	//TODO: build image
 	buildImageViaCLI(&sApplicationData)
@@ -537,6 +535,7 @@ func Reloadwebserver() bool {
 	if err != nil {
 		panic(err)
 	}
+	log.Println("Webserver Restart Output", output)
 	if strings.Contains(string(output), "signal process started") == true {
 		reloaded = true
 	}
@@ -597,7 +596,11 @@ func removeTmpDockerfile(sApplicationData *ApplicationData) {
 
 //ReplaceStringInFile replaces string inside file
 //used to replace string inside docker file
-func ReplaceStringInFile(r *strings.Replacer, sApplicationData *ApplicationData) string {
+func ReplaceStringInFile(sApplicationData *ApplicationData, bitbucketObject BitbucketPayload) string {
+
+	currentBranch := fmt.Sprintf("%s%s", "git clone -b ", bitbucketObject.GetBranchName())
+	log.Println("Current Branch: ", currentBranch)
+
 	//Read in the master docker file for this application
 	filepath := fmt.Sprintf("%s/%s", sApplicationData.DockerfilePath, sApplicationData.Dockerfilename)
 	//Change the dockerFileName to the tmp version
@@ -608,9 +611,15 @@ func ReplaceStringInFile(r *strings.Replacer, sApplicationData *ApplicationData)
 
 	var newString string
 	if err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
-	newString = r.Replace(string(byteArray))
+
+	r, e := regexp.Compile("git clone -b \\w+")
+	if e != nil {
+		panic(e)
+	}
+
+	newString = string(r.ReplaceAll(byteArray, []byte(currentBranch)))
 
 	file, err := os.OpenFile(tmpFilePath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {

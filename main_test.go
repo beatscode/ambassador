@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 
 	"testing"
@@ -63,27 +64,34 @@ func TestBitbucketPushLookup(t *testing.T) {
 		t.Error("Could not find correct branch name")
 	}
 }
-
-func TestReplaceStringInFile(t *testing.T) {
-	var filePath = "./tmpFile.txt"
-	f, e := os.Create(filePath)
+func TestReplaceGitBranchPhrase(t *testing.T) {
+	branchPhrase := []byte("git clone -b dev")
+	newbranchPhrase := "git clone -b test"
+	r, e := regexp.Compile("git clone -b \\w+")
 	if e != nil {
 		t.Error(e)
 	}
-	defer f.Close()
-	f.WriteString("git clone -b hhvm")
+	newByteArray := r.ReplaceAll([]byte(branchPhrase), []byte(newbranchPhrase))
+	fmt.Println("New Phrase", string(newByteArray))
+	if string(newByteArray) == newbranchPhrase {
+		t.Log("Success")
+	} else {
+		t.Error("Error converting", string(newByteArray))
+	}
+}
+func TestReplaceStringInFile(t *testing.T) {
 
-	replacer := strings.NewReplacer("git clone -b hhvm", fmt.Sprintf("%s", "git clone -b newbranch"))
-	s := ReplaceStringInFile(replacer, &sApplicationData)
+	sApplicationData.DockerfilePath = "testdockerfiledirectory"
+	sApplicationData.Image = "busybox"
+	sApplicationData.Dockerfilename = "Dockerfile.busybox"
 
-	if s == "git clone -b newbranch" {
+	s := ReplaceStringInFile(&sApplicationData, bitbucketObject)
+
+	if strings.Contains(s, fmt.Sprintf("%s%s", "git clone -b ", bitbucketObject.GetBranchName())) {
 		t.Log("Success")
 	} else {
 		t.Error("Failed to replace string in file")
 	}
-
-	f.Truncate(0)
-	f.WriteString("git clone -b hhvm")
 }
 
 func TestListContainers(t *testing.T) {
@@ -182,10 +190,8 @@ func TestTmpDockerfile(t *testing.T) {
 	sApplicationData.Image = "busybox"
 	sApplicationData.Dockerfilename = "Dockerfile.busybox"
 	newBranchString := fmt.Sprintf("%s%s", "git clone -b ", bitbucketObject.GetBranchName())
-	replacer := strings.NewReplacer("git clone -b testybaby",
-		newBranchString)
 
-	ReplaceStringInFile(replacer, &sApplicationData)
+	ReplaceStringInFile(&sApplicationData, bitbucketObject)
 
 	tmpfilepath := fmt.Sprintf("%s/%s", sApplicationData.DockerfilePath, sApplicationData.Dockerfilename)
 	if strings.Contains(sApplicationData.Dockerfilename, "tmp") != true {
