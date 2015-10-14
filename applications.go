@@ -20,6 +20,7 @@ type ApplicationData struct {
 	TestDockerfilepath string
 	Webrootdirectory   string `json:"webrootdirectory"`
 	IsTesting          bool
+	VolumeBinds        []string `json:"volumebinds"`
 }
 
 func (app *ApplicationData) SetTestMode(mode bool) {

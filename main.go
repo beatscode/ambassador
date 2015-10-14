@@ -120,6 +120,11 @@ func AppchangeHandler(w http.ResponseWriter, r *http.Request) {
 
 //ManualchangeHandler allows user to build an image and run the container manually
 func ManualchangeHandler(w http.ResponseWriter, r *http.Request) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Println("Error manual change:", r)
+		}
+	}()
 	r.ParseForm()
 	repository := r.FormValue("repository")
 	branchName := r.FormValue("branch")
@@ -129,12 +134,14 @@ func ManualchangeHandler(w http.ResponseWriter, r *http.Request) {
 		bitbucketObject.SetRepositoryName(repository)
 		bitbucketObject.SetBranchName(branchName)
 		sApplicationData := findManifestByName(bitbucketObject.GetRepositoryName())
+		log.Println("Manual Change", sApplicationData, bitbucketObject)
+		if &sApplicationData != nil {
+			ExecutePayload(sApplicationData, bitbucketObject)
+		}
+	} else {
+		var data interface{}
 
-		ExecutePayload(sApplicationData, bitbucketObject)
-	}
-	var data interface{}
-
-	fmt.Fprint(w, `<h1>Manually Starting Images</h1>
+		fmt.Fprint(w, `<h1>Manually Starting Images</h1>
 
 	<form action="/ambassador/manual" method="POST">
 	<div>
@@ -146,8 +153,9 @@ func ManualchangeHandler(w http.ResponseWriter, r *http.Request) {
 	<div><input type="submit" value="Submit"></div>
 	</form>
 `, data)
-	//t, _ := template.ParseFiles("views/manual.go")
-	//t.Execute(w, data)
+		//t, _ := template.ParseFiles("views/manual.go")
+		//t.Execute(w, data)
+	}
 }
 func findManifestByName(name string) ApplicationData {
 	//Parse Manifest Files for the appropriate application
@@ -197,7 +205,11 @@ func getImageFromDockerfile(filePath string) string {
 
 //ExecutePayload parses the payload and continues to processes
 func ExecutePayload(sApplicationData ApplicationData, bitbucketObject BitbucketPayload) {
-
+	defer func() {
+		if r := recover(); r != nil {
+			log.Println("Error Execute Payload:", r)
+		}
+	}()
 	if sApplicationData.HasTest && sApplicationData.IsTesting == false {
 		go TestApplication(sApplicationData, bitbucketObject)
 	}
@@ -279,7 +291,9 @@ func runContainer(sApplicationData ApplicationData) *dockerclient.ContainerInfo 
 	//TODO: Run new container
 	hostconfig := dockerclient.HostConfig{
 		PublishAllPorts: true,
+		Binds:           sApplicationData.VolumeBinds,
 	}
+
 	containerConfig := &dockerclient.ContainerConfig{
 		Image:       sApplicationData.Image,
 		Cmd:         sApplicationData.Command,

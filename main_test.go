@@ -227,7 +227,22 @@ func TestMakeDockerfileTar(t *testing.T) {
 
 func TestGenContainer(t *testing.T) {
 	c := runContainer(sApplicationData)
-	fmt.Println(c.NetworkSettings.Ports)
+	var foundVolume bool
+
+	for k, v := range c.Volumes {
+		for _, t := range sApplicationData.VolumeBinds {
+			fmt.Println(fmt.Sprintf("%s:%s", v, k), t)
+			if fmt.Sprintf("%s:%s", v, k) == t {
+				foundVolume = true
+			}
+		}
+	}
+
+	if foundVolume {
+		t.Log("Success")
+	} else {
+		t.Error("Failed to installed appropriate volumes")
+	}
 	var port, ip string
 	for portString, portBinding := range c.NetworkSettings.Ports {
 		if portString == "80/tcp" {
