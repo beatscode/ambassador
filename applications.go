@@ -21,8 +21,10 @@ type ApplicationData struct {
 	Webrootdirectory   string `json:"webrootdirectory"`
 	IsTesting          bool
 	VolumeBinds        []string `json:"volumebinds"`
+	NginxConf          string   `json:"nginx_conf"`
 }
 
+//SetTestMode sets the mode of the application when executing Payload
 func (app *ApplicationData) SetTestMode(mode bool) {
 	app.IsTesting = mode
 }

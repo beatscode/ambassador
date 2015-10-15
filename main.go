@@ -552,7 +552,11 @@ func UpdateApplicationNginxConf(sApplicationData ApplicationData) {
 	case "golang.conf":
 		t.Parse(golangconf)
 	default:
-		log.Println("Could not find conf type", sApplicationData.ConfType)
+		if len(sApplicationData.ConfType) > 5 {
+			t.Parse(sApplicationData.NginxConf)
+		} else {
+			log.Println("Could not find conf type", sApplicationData.ConfType)
+		}
 	}
 
 	err = t.Execute(buff, sApplicationData)
