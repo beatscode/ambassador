@@ -277,7 +277,7 @@ func StopOldContainers(sApplicationData ApplicationData, cInfo *dockerclient.Con
 			if strings.Contains(name, sApplicationData.Name) == true {
 				if cInfo.Name != name {
 					log.Println("Killing: ", sApplicationData.Name, " ID: ", c.Id, " IMAGE: ", c.Image)
-					err = docker.KillContainer(c.Id, "SIGINT")
+					err = docker.KillContainer(c.Id, "SIGKILL")
 					if err != nil {
 						log.Println("Error: ", err)
 					}
