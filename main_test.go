@@ -402,6 +402,26 @@ func TestApplicationTest(t *testing.T) {
 	}
 }
 
+func something() bool {
+	res := true
+	defer func() {
+		if r := recover(); r != nil {
+			log.Println(r)
+			log.Println("response", res)
+			res = true
+		}
+	}()
+
+	if 1+2 == 2 {
+		panic("Im panicing")
+	}
+	return res
+}
+
+func TestPanicTry(t *testing.T) {
+
+	log.Println("Returning: ", something())
+}
 func TestStopOldContainers(t *testing.T) {
 	containerName := "reponame"
 	sApplicationData.Name = containerName

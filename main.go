@@ -274,9 +274,9 @@ func StopOldContainers(sApplicationData ApplicationData, cInfo *dockerclient.Con
 	//Only find applications with the same name
 	for _, c := range containers {
 		for _, name := range c.Names {
-			if strings.Contains(name, sApplicationData.Name) == true {
+			if strings.Contains(name, sApplicationData.Name) == true && (c.Image == sApplicationData.Image || c.Image == fmt.Sprintf("%s:latest", sApplicationData.Image)) {
 				if cInfo.Name != name {
-					log.Println("Killing: ", sApplicationData.Name, " ID: ", c.Id, " IMAGE: ", c.Image)
+					log.Println("Killing: ", name, " App Name: ", sApplicationData.Name, " ID: ", c.Id, " IMAGE: ", c.Image)
 					err = docker.KillContainer(c.Id, "SIGKILL")
 					if err != nil {
 						log.Println("Error: ", err)
@@ -402,10 +402,11 @@ func buildImage(sApplication ApplicationData) {
 	}
 
 }
-func buildImageViaCLI(sApplication *ApplicationData) {
+func buildImageViaCLI(sApplication *ApplicationData) bool {
+	response := true
 	defer func() {
 		if r := recover(); r != nil {
-			log.Println("Recovered from Building Image", sApplication.Name, r)
+			log.Println("Error Recovered from Building Image", sApplication.Name, r)
 		}
 	}()
 	pathError := os.Chdir(sApplication.DockerfilePath)
@@ -430,14 +431,14 @@ func buildImageViaCLI(sApplication *ApplicationData) {
 	//Name the image different than the image to stop conflicting with registry images
 	reloadCommand := exec.Command("docker", "build", "--no-cache", "-f", sApplication.Dockerfilename, "-t", sApplication.Image, ".")
 
-	output, err := reloadCommand.CombinedOutput()
+	_, err := reloadCommand.CombinedOutput()
 	if err != nil {
 		panic(err)
 	}
 
-	log.Println(string(output))
+	//log.Println(string(output))
 	//Sleep for 5 seconds so that the container can be finalized by docker
-	time.Sleep(5 * time.Second)
+	time.Sleep(3 * time.Second)
 	//TODO: after building the image who knows how
 	//long it will take to Finished
 
@@ -456,7 +457,10 @@ forever_loop:
 			}
 		}
 	}
-	removeTmpDockerfile(sApplication)
+	if removeTmpDockerfile(sApplication) == false {
+		panic(fmt.Sprintf("Could not remove tmpDockerfile: %s", sApplication.DockerfilePath))
+	}
+	return response
 }
 
 //Makedockerfiletar makes a tar out of a directory
@@ -591,7 +595,8 @@ func UpdateApplicationNginxConf(sApplicationData ApplicationData) {
 		log.Fatal("Error Writing", err)
 	}
 }
-func removeTmpDockerfile(sApplicationData *ApplicationData) {
+func removeTmpDockerfile(sApplicationData *ApplicationData) bool {
+	response := true
 	defer func() {
 		if r := recover(); r != nil {
 			log.Println("Could Not Remove Tmp Docker File", r)
@@ -606,6 +611,7 @@ func removeTmpDockerfile(sApplicationData *ApplicationData) {
 			panic(err)
 		}
 	}
+	return response
 }
 
 //ReplaceStringInFile replaces string inside file
