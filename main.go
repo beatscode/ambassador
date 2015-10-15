@@ -549,14 +549,10 @@ func UpdateApplicationNginxConf(sApplicationData ApplicationData) {
 	switch sApplicationData.ConfType {
 	case "phpserver.conf":
 		t.Parse(phpserverconf)
-	case "golang.conf":
-		t.Parse(golangconf)
+	case "proxy.conf":
+		t.Parse(proxyconf)
 	default:
-		if len(sApplicationData.ConfType) > 5 {
-			t.Parse(sApplicationData.NginxConf)
-		} else {
-			log.Println("Could not find conf type", sApplicationData.ConfType)
-		}
+		log.Println("Could not find conf type", sApplicationData.ConfType)
 	}
 
 	err = t.Execute(buff, sApplicationData)
