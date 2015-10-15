@@ -285,12 +285,10 @@ func TestGenContainer(t *testing.T) {
 		t.Error("Failed to installed appropriate volumes")
 	}
 	var port, ip string
-	for portString, portBinding := range c.NetworkSettings.Ports {
+	for portString := range c.NetworkSettings.Ports {
 		if portString == sApplicationData.Exposedport {
-			for _, binding := range portBinding {
-				port = binding.HostPort
-				ip = c.NetworkSettings.IPAddress
-			}
+			port = "80"
+			ip = c.NetworkSettings.IPAddress
 		}
 	}
 	updateApplicationCurrentPort(&sApplicationData, c)
@@ -301,8 +299,8 @@ func TestGenContainer(t *testing.T) {
 		panic(err)
 	}
 
-	if strings.Contains(string(b), fmt.Sprintf("%s:%s", ip, port)) == false {
-		t.Error("Could not parse IP And port properly")
+	if strings.Contains(string(b), fmt.Sprintf("%s:%s", ip, "80")) == false {
+		t.Error("Could not parse IP And port properly", ip, port)
 	} else {
 		t.Log("Success")
 	}

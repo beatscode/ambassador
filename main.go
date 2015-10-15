@@ -248,15 +248,18 @@ func ExecutePayload(sApplicationData ApplicationData, bitbucketObject BitbucketP
 }
 
 func updateApplicationCurrentPort(sApplicationData *ApplicationData, ContainerInfo *dockerclient.ContainerInfo) {
+	//Get the integer from the tcp string "80/tcp"
+	r, e := regexp.Compile("\\d+")
+	if e != nil {
+		log.Println("Regexp", e)
+	}
 
-	for portString, portBinding := range ContainerInfo.NetworkSettings.Ports {
-		log.Println("Ports In Network Settings", portString)
+	exposedPortNumber := string(r.Find([]byte(sApplicationData.Exposedport)))
+
+	for portString := range ContainerInfo.NetworkSettings.Ports {
 		if portString == sApplicationData.Exposedport {
-			log.Println("")
-			for _, binding := range portBinding {
-				sApplicationData.CurrentPort = binding.HostPort
-				sApplicationData.IP = ContainerInfo.NetworkSettings.IPAddress
-			}
+			sApplicationData.CurrentPort = exposedPortNumber
+			sApplicationData.IP = ContainerInfo.NetworkSettings.IPAddress
 		}
 	}
 }
