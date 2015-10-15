@@ -250,7 +250,9 @@ func ExecutePayload(sApplicationData ApplicationData, bitbucketObject BitbucketP
 func updateApplicationCurrentPort(sApplicationData *ApplicationData, ContainerInfo *dockerclient.ContainerInfo) {
 
 	for portString, portBinding := range ContainerInfo.NetworkSettings.Ports {
+		log.Println("Ports In Network Settings", portString)
 		if portString == sApplicationData.Exposedport {
+			log.Println("")
 			for _, binding := range portBinding {
 				sApplicationData.CurrentPort = binding.HostPort
 				sApplicationData.IP = ContainerInfo.NetworkSettings.IPAddress
@@ -287,6 +289,7 @@ func runContainer(sApplicationData ApplicationData) *dockerclient.ContainerInfo 
 			log.Println("Recovered from runContainer", sApplicationData.Name, r)
 		}
 	}()
+
 	//TODO: Generate name for container
 	//TODO: Run new container
 	hostconfig := dockerclient.HostConfig{
@@ -294,12 +297,18 @@ func runContainer(sApplicationData ApplicationData) *dockerclient.ContainerInfo 
 		Binds:           sApplicationData.VolumeBinds,
 	}
 
+	var exposedPort map[string]struct{}
+	if sApplicationData.Exposedport != "" {
+		exposedPort[sApplicationData.Exposedport] = struct{}{}
+	}
+
 	containerConfig := &dockerclient.ContainerConfig{
-		Image:       sApplicationData.Image,
-		Cmd:         sApplicationData.Command,
-		AttachStdin: true,
-		Tty:         false,
-		HostConfig:  hostconfig,
+		Image:        sApplicationData.Image,
+		Cmd:          sApplicationData.Command,
+		AttachStdin:  true,
+		Tty:          false,
+		HostConfig:   hostconfig,
+		ExposedPorts: exposedPort,
 	}
 	//Make new Container Name
 	r := time.Now().UnixNano()
