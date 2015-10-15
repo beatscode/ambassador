@@ -290,11 +290,14 @@ func runContainer(sApplicationData ApplicationData) *dockerclient.ContainerInfo 
 		}
 	}()
 
+	var emptyPortBinding map[string][]dockerclient.PortBinding
+
 	//TODO: Generate name for container
 	//TODO: Run new container
 	hostconfig := dockerclient.HostConfig{
 		PublishAllPorts: true,
 		Binds:           sApplicationData.VolumeBinds,
+		PortBindings:    emptyPortBinding,
 	}
 
 	exposedPort := make(map[string]struct{}, 1)
