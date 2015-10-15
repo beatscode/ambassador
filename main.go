@@ -297,8 +297,10 @@ func runContainer(sApplicationData ApplicationData) *dockerclient.ContainerInfo 
 		Binds:           sApplicationData.VolumeBinds,
 	}
 
-	var exposedPort map[string]struct{}
+	exposedPort := make(map[string]struct{}, 1)
+
 	if sApplicationData.Exposedport != "" {
+		log.Fatalln(sApplicationData.Exposedport)
 		exposedPort[sApplicationData.Exposedport] = struct{}{}
 	}
 
