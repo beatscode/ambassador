@@ -300,7 +300,6 @@ func runContainer(sApplicationData ApplicationData) *dockerclient.ContainerInfo 
 	exposedPort := make(map[string]struct{}, 1)
 
 	if sApplicationData.Exposedport != "" {
-		log.Fatalln(sApplicationData.Exposedport)
 		exposedPort[sApplicationData.Exposedport] = struct{}{}
 	}
 
