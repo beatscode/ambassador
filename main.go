@@ -126,6 +126,7 @@ func ManualchangeHandler(w http.ResponseWriter, r *http.Request) {
 			log.Println("Error manual change:", r)
 		}
 	}()
+	var data interface{}
 	r.ParseForm()
 	repository := r.FormValue("repository")
 	branchName := r.FormValue("branch")
@@ -142,24 +143,20 @@ func ManualchangeHandler(w http.ResponseWriter, r *http.Request) {
 		if &sApplicationData != nil {
 			ExecutePayload(sApplicationData, bitbucketObject)
 		}
-	} else {
-		var data interface{}
-
-		fmt.Fprint(w, `<h1>Manually Starting Images</h1>
-
-	<form action="/ambassador/manual" method="POST">
-	<div>
-	    <h3>Repository Name</h3>
-	    <input type="text" name="repository" value="">
-	    <h3>Branch Name</h3>
-	    <input type="text" name="branch" value="">
-	    <br>
-	<div><input type="submit" value="Submit"></div>
-	</form>
-`, data)
-		//t, _ := template.ParseFiles("views/manual.go")
-		//t.Execute(w, data)
 	}
+
+	fmt.Fprint(w, `<h1>Manually Starting Images</h1>
+			<form action="/ambassador/manual" method="POST">
+			<div>
+			    <h3>Repository Name</h3>
+			    <input type="text" name="repository" value="">
+			    <h3>Branch Name</h3>
+			    <input type="text" name="branch" value="">
+			    <br>
+			<div><input type="submit" value="Submit"></div>
+			</form>
+		`, data)
+
 }
 func findManifestByName(name string) ApplicationData {
 	//Parse Manifest Files for the appropriate application
@@ -175,7 +172,6 @@ func findManifestByName(name string) ApplicationData {
 	}
 	if !foundApp {
 		log.Print("Could not find manifest file for ", name)
-		//return nil
 	}
 
 	return sApplicationData
@@ -535,7 +531,7 @@ func Reloadwebserver() bool {
 	if err != nil {
 		panic(err)
 	}
-	log.Println("Webserver Restart Output", output)
+	log.Println("Webserver Restart Output", string(output))
 	if strings.Contains(string(output), "signal process started") == true {
 		reloaded = true
 	}
@@ -547,14 +543,16 @@ func Reloadwebserver() bool {
 func UpdateApplicationNginxConf(sApplicationData ApplicationData) {
 
 	var err error
-	var t = template.New("nginx Conf")
+	var t = template.New("Nginx Conf")
 	//TODO: write out new nginx to webserver location
 	buff := bytes.NewBufferString("")
 	switch sApplicationData.ConfType {
-	case "phpserverconf":
+	case "phpserver.conf":
 		t.Parse(phpserverconf)
-	case "golangconf":
+	case "golang.conf":
 		t.Parse(golangconf)
+	default:
+		log.Println("Could not find conf type", sApplicationData.ConfType)
 	}
 
 	err = t.Execute(buff, sApplicationData)
