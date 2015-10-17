@@ -47,6 +47,7 @@ func init() {
 	// nginxTest.Image = "nginx:latest"
 	// runContainer(nginxTest)
 }
+
 func TestBitbucketPushLookup(t *testing.T) {
 
 	if bitbucketObject.Repository.Name == "test" {

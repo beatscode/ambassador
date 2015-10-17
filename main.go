@@ -220,11 +220,13 @@ func ExecutePayload(sApplicationData ApplicationData, bitbucketObject BitbucketP
 		return
 	}
 
+	//TODO:Just in case there is a dangling tmpDockerfile laying around
+	removeTmpDockerfile(&sApplicationData)
+
 	//TODO: Replace branch from git pull command in dockerfile
 	//However the dockerfile is git managed and we don't want
 	//to change this forever
 	//We need to copy the file and update that file
-
 	ReplaceStringInFile(&sApplicationData, bitbucketObject)
 
 	//TODO: build image
@@ -409,10 +411,12 @@ func buildImageViaCLI(sApplication *ApplicationData) bool {
 			log.Println("Error Recovered from Building Image", sApplication.Name, r)
 		}
 	}()
+
 	pathError := os.Chdir(sApplication.DockerfilePath)
 	if pathError != nil {
 		panic(pathError)
 	}
+
 	//Set the testing docker image as the current image
 	// if sApplication.HasTest && sApplication.IsTesting {
 	// 	sApplication.Image = getImageFromDockerfile(fmt.Sprintf("%s/Dockerfile", sApplication.TestDockerfilepath))
@@ -605,10 +609,13 @@ func removeTmpDockerfile(sApplicationData *ApplicationData) bool {
 
 	if strings.Contains(sApplicationData.Dockerfilename, "tmp") == true {
 		tmpFilepath := fmt.Sprintf("%s/%s", sApplicationData.DockerfilePath, sApplicationData.Dockerfilename)
-		log.Println("Removing ", tmpFilepath)
-		err := os.Remove(tmpFilepath)
-		if err != nil {
-			panic(err)
+
+		if _, err := os.Stat(tmpFilepath); os.IsExist(err) {
+			log.Println("Removing tmp file: ", tmpFilepath)
+			err = os.Remove(tmpFilepath)
+			if err != nil {
+				panic(err)
+			}
 		}
 	}
 	return response
