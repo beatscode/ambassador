@@ -141,7 +141,7 @@ func ManualchangeHandler(w http.ResponseWriter, r *http.Request) {
 		log.Println("bitbucket", bitbucketObject)
 
 		if &sApplicationData != nil {
-			ExecutePayload(sApplicationData, bitbucketObject)
+			go ExecutePayload(sApplicationData, bitbucketObject)
 		}
 	}
 
@@ -207,12 +207,9 @@ func getImageFromDockerfile(filePath string) string {
 func ExecutePayload(sApplicationData ApplicationData, bitbucketObject BitbucketPayload) {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Println("Error Execute Payload:", r)
+			log.Println("Error Executing Payload:", r)
 		}
 	}()
-	if sApplicationData.HasTest && sApplicationData.IsTesting == false {
-		go TestApplication(sApplicationData, bitbucketObject)
-	}
 
 	//TODO: Find dockerfile location
 	if _, err := os.Stat(sApplicationData.DockerfilePath); os.IsNotExist(err) {
@@ -236,6 +233,7 @@ func ExecutePayload(sApplicationData ApplicationData, bitbucketObject BitbucketP
 	ContainerInfo := runContainer(sApplicationData)
 
 	StopOldContainers(sApplicationData, ContainerInfo)
+
 	//TODO: Get container ip and port
 	updateApplicationCurrentPort(&sApplicationData, ContainerInfo)
 
@@ -246,6 +244,10 @@ func ExecutePayload(sApplicationData ApplicationData, bitbucketObject BitbucketP
 	if sApplicationData.IsTesting == false {
 		//stopOldContainers()
 		Reloadwebserver()
+	}
+
+	if sApplicationData.HasTest && sApplicationData.IsTesting == false {
+		go TestApplication(sApplicationData, bitbucketObject)
 	}
 }
 
@@ -320,11 +322,10 @@ func runContainer(sApplicationData ApplicationData) *dockerclient.ContainerInfo 
 		ExposedPorts: exposedPort,
 	}
 	//Make new Container Name
-	r := time.Now().UnixNano()
 	if sApplicationData.IsTesting {
 		sApplicationData.Name = fmt.Sprintf("%s-test", sApplicationData.Name)
 	}
-	ContainerName := fmt.Sprintf("%s-%d", sApplicationData.Name, r)
+	ContainerName := fmt.Sprintf("%s-%d", sApplicationData.Name, time.Now().UnixNano())
 
 	//Create Container
 	containerID, err := docker.CreateContainer(containerConfig, ContainerName)
@@ -607,17 +608,18 @@ func removeTmpDockerfile(sApplicationData *ApplicationData) bool {
 		}
 	}()
 
-	if strings.Contains(sApplicationData.Dockerfilename, "tmp") == true {
-		tmpFilepath := fmt.Sprintf("%s/%s", sApplicationData.DockerfilePath, sApplicationData.Dockerfilename)
-
-		if _, err := os.Stat(tmpFilepath); os.IsExist(err) {
-			log.Println("Removing tmp file: ", tmpFilepath)
-			err = os.Remove(tmpFilepath)
-			if err != nil {
-				panic(err)
-			}
+	tmpFilepath := fmt.Sprintf("%s/tmp%s", sApplicationData.DockerfilePath, sApplicationData.Dockerfilename)
+	log.Println("Attempting to remove: ", tmpFilepath)
+	if _, err := os.Stat(tmpFilepath); err == nil {
+		log.Println("Removing tmp file: ", tmpFilepath)
+		err = os.Remove(tmpFilepath)
+		if err != nil {
+			panic(err)
 		}
+	} else {
+		log.Println("tmpFilePath does not exist")
 	}
+
 	return response
 }
 

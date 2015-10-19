@@ -22,7 +22,7 @@ var phpserverconf = string(`server {
     try_files $uri $uri/ /index.php$uri /index.php?$args;
 
     location / {
-    #    index  index.html index.htm index.php $uri;
+        index  index.html index.htm index.php $uri;
     }
 
     location ~* \.(jpg|jpeg|gif|png|html|htm|css|zip|tgz|gz|rar|doc|xls|pdf|ppt|tar|wav|bmp|rtf|swf|flv|txt|xml|docx|xlsx|js)$ {
