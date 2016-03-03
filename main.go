@@ -302,6 +302,9 @@ func runContainer(sApplicationData ApplicationData) *dockerclient.ContainerInfo 
 	}()
 
 	var emptyPortBinding map[string][]dockerclient.PortBinding
+	var restartPolicy dockerclient.RestartPolicy
+	restartPolicy.Name = "on-failure"
+	restartPolicy.MaximumRetryCount = int64(3)
 
 	//TODO: Generate name for container
 	//TODO: Run new container
@@ -309,6 +312,7 @@ func runContainer(sApplicationData ApplicationData) *dockerclient.ContainerInfo 
 		PublishAllPorts: true,
 		Binds:           sApplicationData.VolumeBinds,
 		PortBindings:    emptyPortBinding,
+		RestartPolicy:   restartPolicy,
 	}
 
 	exposedPort := make(map[string]struct{}, 1)
