@@ -287,7 +287,12 @@ func StopOldContainers(sApplicationData ApplicationData, cInfo *dockerclient.Con
 					log.Println("Killing: ", name, " App Name: ", sApplicationData.Name, " ID: ", c.Id, " IMAGE: ", c.Image)
 					err = docker.KillContainer(c.Id, "SIGKILL")
 					if err != nil {
-						log.Println("Error: ", err)
+						log.Println("Kill Container Error: ", err)
+					}
+					//Remove Killed Container
+					err = docker.RemoveContainer(c.Id, true, true)
+					if err != nil {
+						log.Println("Removing Container Error: ", err)
 					}
 				}
 			}
