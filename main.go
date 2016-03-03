@@ -63,6 +63,9 @@ func loadApplicationDataFiles() []ApplicationData {
 	files, e := f.Readdir(0)
 	var buffer bytes.Buffer
 	for _, tmpFile := range files {
+		//Reset appManifest to not leak data from other files
+		//into new struct
+		appManifest = ApplicationData{}
 		buffer.Reset()
 		if tmpFile.IsDir() == true {
 			continue
@@ -237,11 +240,12 @@ func ExecutePayload(sApplicationData ApplicationData, bitbucketObject BitbucketP
 	//TODO: Get container ip and port
 	updateApplicationCurrentPort(&sApplicationData, ContainerInfo)
 
-	//TODO: update nginx conf
-	UpdateApplicationNginxConf(sApplicationData)
-
 	//TODO: Reload web server
+	// Only update the nginx conf we are not testing
 	if sApplicationData.IsTesting == false {
+		//TODO: update nginx conf
+		UpdateApplicationNginxConf(sApplicationData)
+
 		//stopOldContainers()
 		Reloadwebserver()
 	}
@@ -326,7 +330,7 @@ func runContainer(sApplicationData ApplicationData) *dockerclient.ContainerInfo 
 		sApplicationData.Name = fmt.Sprintf("%s-test", sApplicationData.Name)
 	}
 	ContainerName := fmt.Sprintf("%s-%d", sApplicationData.Name, time.Now().UnixNano())
-
+	log.Println("Creating ", sApplicationData.Name, "container with ", sApplicationData.Image)
 	//Create Container
 	containerID, err := docker.CreateContainer(containerConfig, ContainerName)
 	if err != nil {
@@ -426,15 +430,18 @@ func buildImageViaCLI(sApplication *ApplicationData) bool {
 	//Get the folder that houses the current dockerfile
 	//Lets name the image this name
 	sApplication.Image = path.Base(sApplication.DockerfilePath)
-
+	tmpDockerfile := fmt.Sprintf("tmp%s", sApplication.Dockerfilename)
 	log.Println("Current Directory", sApplication.DockerfilePath)
 	log.Println("Building: ", sApplication.Name)
 	log.Println("Image: ", sApplication.Image)
-	log.Println("docker", "build", "--no-cache", "-f", sApplication.Dockerfilename, "-t", sApplication.Image, ".")
+	log.Println("docker", "build", "--no-cache", "-f", tmpDockerfile, "-t", sApplication.Image, ".")
 
 	//Run Build Command
 	//Name the image different than the image to stop conflicting with registry images
-	reloadCommand := exec.Command("docker", "build", "--no-cache", "-f", sApplication.Dockerfilename, "-t", sApplication.Image, ".")
+	reloadCommand := exec.Command(
+		"docker", "build", "--no-cache",
+		"-f", tmpDockerfile,
+		"-t", sApplication.Image, ".")
 
 	_, err := reloadCommand.CombinedOutput()
 	if err != nil {
@@ -634,8 +641,8 @@ func ReplaceStringInFile(sApplicationData *ApplicationData, bitbucketObject Bitb
 	filepath := fmt.Sprintf("%s/%s", sApplicationData.DockerfilePath, sApplicationData.Dockerfilename)
 	//Change the dockerFileName to the tmp version
 	//Later we will use this value for building
-	sApplicationData.Dockerfilename = fmt.Sprintf("tmp%s", sApplicationData.Dockerfilename)
-	tmpFilePath := fmt.Sprintf("%s/%s", sApplicationData.DockerfilePath, sApplicationData.Dockerfilename)
+	//sApplicationData.Dockerfilename = fmt.Sprintf("tmp%s", sApplicationData.Dockerfilename)
+	tmpFilePath := fmt.Sprintf("%s/tmp%s", sApplicationData.DockerfilePath, sApplicationData.Dockerfilename)
 	byteArray, err := ioutil.ReadFile(filepath)
 
 	var newString string
