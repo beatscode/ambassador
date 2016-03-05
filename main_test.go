@@ -453,3 +453,59 @@ func TestStopOldContainers(t *testing.T) {
 		t.Log("Success")
 	}
 }
+
+func TestRemoveDeadImages(t *testing.T) {
+	//var containerName = "<none>"
+	RemoveDeadImages()
+	images, err := docker.ListImages(true)
+	if err != nil {
+		t.Fatalf("cannot get containers: %s", err)
+	}
+
+	imageNames := []string{}
+	for _, i := range images {
+		for _, r := range i.RepoTags {
+			if r == "<none>:<none>" {
+				imageNames = append(imageNames, i.Id)
+			}
+		}
+	}
+	if len(imageNames) > 1 {
+		t.Error("Still numerous dead images alive")
+	} else {
+		t.Log("Success")
+	}
+}
+
+func TestRemoveDeadImagesWithRunningContainer(t *testing.T) {
+
+	sApplicationData.DockerfilePath = "testdockerfiledirectory"
+	sApplicationData.Image = "busybox"
+	sApplicationData.Dockerfilename = "Dockerfile.busybox"
+
+	buildImageViaCLI(&sApplicationData)
+
+	//TODO: Run Container
+	ContainerInfo := runContainer(sApplicationData)
+
+	RemoveDeadImages()
+	containers, err := docker.ListContainers(false, false, "")
+	if err != nil {
+		t.Fatalf("cannot get containers: %s", err)
+	}
+
+	containerNames := []string{}
+	for _, c := range containers {
+		for _, name := range c.Names {
+			if strings.Contains(name, ContainerInfo.Name) == true {
+				containerNames = append(containerNames, name)
+			}
+		}
+	}
+
+	if len(containerNames) > 1 {
+		t.Log("Success")
+	} else {
+		t.Error("Still numerous containers still alive")
+	}
+}

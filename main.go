@@ -299,6 +299,27 @@ func StopOldContainers(sApplicationData ApplicationData, cInfo *dockerclient.Con
 		}
 	}
 }
+
+//RemoveDeadImages remove images with <none>:<none> tags
+func RemoveDeadImages() {
+
+	images, err := docker.ListImages(true)
+	if err != nil {
+		fmt.Println("cannot get containers: %s", err)
+	}
+	imageNames := []string{}
+	for _, i := range images {
+		for _, r := range i.RepoTags {
+			if r == "<none>:<none>" {
+				fmt.Println(i)
+				imageNames = append(imageNames, i.Id)
+				docker.RemoveImage(i.Id, false)
+			} else {
+				fmt.Println(r)
+			}
+		}
+	}
+}
 func runContainer(sApplicationData ApplicationData) *dockerclient.ContainerInfo {
 	defer func() {
 		if r := recover(); r != nil {
