@@ -230,28 +230,33 @@ func ExecutePayload(sApplicationData ApplicationData, bitbucketObject BitbucketP
 	ReplaceStringInFile(&sApplicationData, bitbucketObject)
 
 	//TODO: build image
-	buildImageViaCLI(&sApplicationData)
+	if buildImageViaCLI(&sApplicationData) {
 
-	//TODO: Run Container
-	ContainerInfo := runContainer(sApplicationData)
+		//TODO: Run Container
+		ContainerInfo := runContainer(sApplicationData)
 
-	StopOldContainers(sApplicationData, ContainerInfo)
+		StopOldContainers(sApplicationData, ContainerInfo)
 
-	//TODO: Get container ip and port
-	updateApplicationCurrentPort(&sApplicationData, ContainerInfo)
+		//TODO: Get container ip and port
+		updateApplicationCurrentPort(&sApplicationData, ContainerInfo)
 
-	//TODO: Reload web server
-	// Only update the nginx conf we are not testing
-	if sApplicationData.IsTesting == false {
-		//TODO: update nginx conf
-		UpdateApplicationNginxConf(sApplicationData)
+		//TODO: Reload web server
+		// Only update the nginx conf we are not testing
+		if sApplicationData.IsTesting == false {
+			//TODO: update nginx conf
+			UpdateApplicationNginxConf(sApplicationData)
 
-		//stopOldContainers()
-		Reloadwebserver()
-	}
+			//stopOldContainers()
+			Reloadwebserver()
+		}
 
-	if sApplicationData.HasTest && sApplicationData.IsTesting == false {
-		go TestApplication(sApplicationData, bitbucketObject)
+		if sApplicationData.HasTest && sApplicationData.IsTesting == false {
+			go TestApplication(sApplicationData, bitbucketObject)
+		}
+	} else {
+		fmt.Println("Could not build following image:", sApplicationData)
+		fmt.Println("Payload: Repository Name", bitbucketObject.GetRepositoryName())
+		fmt.Println("Payload: Branch Name", bitbucketObject.GetBranchName())
 	}
 }
 
@@ -444,6 +449,7 @@ func buildImageViaCLI(sApplication *ApplicationData) bool {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Println("Error Recovered from Building Image", sApplication.Name, r)
+			response = false
 		}
 	}()
 

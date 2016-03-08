@@ -217,6 +217,22 @@ func TestTmpDockerfile(t *testing.T) {
 		t.Error("tmpDockerFile still exists after attempted removal")
 	}
 }
+func TestBrokenBuild(t *testing.T) {
+
+	// TODO: tried using api
+	// var reponame = "testyimage:latest"
+	// TODO: build image
+	sApplicationData.DockerfilePath = "testdockerfiledirectory"
+	sApplicationData.Image = "busybox"
+	sApplicationData.Dockerfilename = "Dockerfile.fail"
+
+	if buildImageViaCLI(&sApplicationData) {
+		t.Error("This image was supposed to fail")
+	} else {
+		t.Log("Successfully returned false due to falty build")
+	}
+
+}
 
 //Build the image and make sure the container running runs
 //only after the image is finish building
