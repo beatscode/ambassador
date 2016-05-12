@@ -229,7 +229,7 @@ func TestBrokenBuild(t *testing.T) {
 	if buildImageViaCLI(&sApplicationData) {
 		t.Error("This image was supposed to fail")
 	} else {
-		t.Log("Successfully returned false due to falty build")
+		t.Log("Successfully returned false due to faulty build")
 	}
 
 }
