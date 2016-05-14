@@ -407,7 +407,6 @@ func TestApplicationTest(t *testing.T) {
 	var found bool
 	for _, c := range containers {
 		for _, name := range c.Names {
-
 			if strings.Contains(name, fmt.Sprintf("%s-test-", sApplicationData.Name)) == true {
 				found = true
 			}
