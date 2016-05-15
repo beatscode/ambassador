@@ -45,7 +45,6 @@ func init() {
 	// nginxTest := sApplicationData
 	// nginxTest.Name = "ambassador_webserver"
 	// nginxTest.Image = "nginx:latest"
-	// runContainer(nginxTest)
 }
 
 func TestBitbucketPushLookup(t *testing.T) {
@@ -234,105 +233,24 @@ func TestBrokenBuild(t *testing.T) {
 
 }
 
-//Build the image and make sure the container running runs
-//only after the image is finish building
-func TestBuildImage(t *testing.T) {
-	// TODO: tried using api
-	// var reponame = "testyimage:latest"
-	// TODO: build image
-	sApplicationData.DockerfilePath = "testdockerfiledirectory"
-	sApplicationData.Image = "busybox"
-	sApplicationData.Dockerfilename = "Dockerfile.busybox"
+//Build image from docker compose exec
+func TestBuildImageViaDockerCompose(t *testing.T) {
 
-	buildImageViaCLI(&sApplicationData)
-
-	//TODO: Run Container
-	ContainerInfo := runContainer(sApplicationData)
-
-	containers, err := docker.ListContainers(true, false, "")
-	if err != nil {
-		log.Fatalf("cannot get containers: %s", err)
-	}
-	var found bool
-	//Only find applications with the same name
-	for _, c := range containers {
-		for _, name := range c.Names {
-			if strings.Contains(name, sApplicationData.Name) == true {
-				found = true
-			}
-		}
-	}
-
-	if found {
-		t.Log("Success Found Container: ", ContainerInfo.Id)
-	} else {
-		t.Error("Error running container after building image")
-	}
-}
-
-func TestMakeDockerfileTar(t *testing.T) {
-
-	path := "testdockerfiledirectory"
-
-	Makedockerfiletar(path)
-
-	if _, err := os.Stat(fmt.Sprintf("%s/%s", path, "Dockerfile.tar")); err == nil {
-		t.Log("Success")
-	} else {
-		t.Error("Dockerfile tar does not exists")
-	}
-}
-
-func TestGenContainer(t *testing.T) {
-	c := runContainer(sApplicationData)
-	var foundVolume bool
-
-	for k, v := range c.Volumes {
-		for _, t := range sApplicationData.VolumeBinds {
-			fmt.Println(fmt.Sprintf("%s:%s", v, k), t)
-			if fmt.Sprintf("%s:%s", v, k) == t {
-				foundVolume = true
-			}
-		}
-	}
-
-	if foundVolume {
-		t.Log("Success")
-	} else {
-		t.Error("Failed to installed appropriate volumes")
-	}
-	var port, ip string
-	for portString := range c.NetworkSettings.Ports {
-		if portString == sApplicationData.Exposedport {
-			port = "80"
-			ip = c.NetworkSettings.IPAddress
-		}
-	}
-	updateApplicationCurrentPort(&sApplicationData, c)
-	UpdateApplicationNginxConf(sApplicationData)
-
-	b, err := ioutil.ReadFile("testConf/test.conf")
+	//	log.Println(sApplicationData.DockercomposeBuildCmd)
+	args := []string{"-f", "/Users/alex/projects/mednet/dockerfiles/leonardo_docker_compose/docker-compose.yml",
+		"-f", "/Users/alex/projects/mednet/dockerfiles/leonardo_docker_compose/docker-compose.dev.yml", "ps"}
+	buildCommand := exec.Command("docker-compose", args...)
+	buildOutput, err := buildCommand.CombinedOutput()
+	log.Println(string(buildOutput))
 	if err != nil {
 		panic(err)
 	}
+	//	if buildImageViaCLI(&sApplicationData) {
+	//		t.Error("This image was supposed to fail")
+	//	} else {
+	//		t.Log("Successfully returned false due to faulty build")
+	//	}
 
-	if strings.Contains(string(b), fmt.Sprintf("%s:%s", ip, "80")) == false {
-		t.Error("Could not parse IP And port properly", ip, port)
-	} else {
-		t.Log("Success")
-	}
-
-	if strings.Contains(string(b), "server_name a.b.com;") {
-		t.Log("Success")
-	} else {
-		t.Error("Could not parse servername")
-	}
-
-	if strings.Contains(string(b), "root /var/www/testroot/public") {
-		t.Log("Success")
-	} else {
-		t.Error("Could not parse root directory")
-	}
 }
 
 func TestReadApplicationData(t *testing.T) {
@@ -434,41 +352,6 @@ func something() bool {
 	return res
 }
 
-func TestPanicTry(t *testing.T) {
-
-	log.Println("Returning: ", something())
-}
-func TestStopOldContainers(t *testing.T) {
-	containerName := "reponame"
-	sApplicationData.Name = containerName
-	sApplicationData.Image = "registry:2"
-	//Run two identical containers
-	runContainer(sApplicationData)
-	cInfo := runContainer(sApplicationData)
-
-	StopOldContainers(sApplicationData, cInfo)
-
-	containers, err := docker.ListContainers(false, false, "")
-	if err != nil {
-		t.Fatalf("cannot get containers: %s", err)
-	}
-
-	containerNames := []string{}
-	for _, c := range containers {
-		for _, name := range c.Names {
-			if strings.Contains(name, containerName) == true {
-				containerNames = append(containerNames, name)
-			}
-		}
-	}
-
-	if len(containerNames) > 1 {
-		t.Error("Still numerous containers still alive")
-	} else {
-		t.Log("Success")
-	}
-}
-
 func TestRemoveDeadImages(t *testing.T) {
 	//var containerName = "<none>"
 	RemoveDeadImages()
@@ -489,38 +372,5 @@ func TestRemoveDeadImages(t *testing.T) {
 		t.Error("Still numerous dead images alive")
 	} else {
 		t.Log("Success")
-	}
-}
-
-func TestRemoveDeadImagesWithRunningContainer(t *testing.T) {
-
-	sApplicationData.DockerfilePath = "testdockerfiledirectory"
-	sApplicationData.Image = "busybox"
-	sApplicationData.Dockerfilename = "Dockerfile.busybox"
-
-	buildImageViaCLI(&sApplicationData)
-
-	//TODO: Run Container
-	ContainerInfo := runContainer(sApplicationData)
-
-	RemoveDeadImages()
-	containers, err := docker.ListContainers(false, false, "")
-	if err != nil {
-		t.Fatalf("cannot get containers: %s", err)
-	}
-
-	containerNames := []string{}
-	for _, c := range containers {
-		for _, name := range c.Names {
-			if strings.Contains(name, ContainerInfo.Name) == true {
-				containerNames = append(containerNames, name)
-			}
-		}
-	}
-
-	if len(containerNames) > 1 {
-		t.Log("Success")
-	} else {
-		t.Error("Still numerous containers still alive")
 	}
 }

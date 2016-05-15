@@ -226,17 +226,30 @@ func ExecutePayload(sApplicationData ApplicationData, bitbucketObject BitbucketP
 	//TODO: build image
 	if buildImageViaCLI(&sApplicationData) {
 
-		//TODO: Restart docker compose application
-
-		//Run Application Command
-		buildCommand := exec.Command("docker-compose", sApplicationData.DockercomposeBuildCmd...)
-		_, err := buildCommand.CombinedOutput()
+		//Start docker compose application
+		log.Println("Starting Docker Compose Application")
+		runCommand := exec.Command("docker-compose", sApplicationData.DockercomposeRunCmd...)
+		_, err := runCommand.CombinedOutput()
 		if err != nil {
 			panic(err)
 		}
 
+		//Push new container to registry
+		log.Println("Docker push ", sApplicationData.Image)
+		log.Println(sApplicationData.Image)
+		pushCommand := exec.Command("docker", "push", sApplicationData.Image)
+		pushOutput, err := pushCommand.CombinedOutput()
+		if err != nil {
+			panic(err)
+		}
+		log.Println(string(pushOutput))
+
 		if sApplicationData.HasTest && sApplicationData.IsTesting == false {
 			go TestApplication(sApplicationData, bitbucketObject)
+		}
+
+		if removeTmpDockerfile(&sApplicationData) == false {
+			panic(fmt.Sprintf("Could not remove tmpDockerfile: %s", sApplicationData.DockerfilePath))
 		}
 	} else {
 		fmt.Println("Could not build following image:", sApplicationData)
@@ -283,7 +296,7 @@ func buildImageViaCLI(sApplication *ApplicationData) bool {
 	//Get the folder that houses the current docker-compose file
 	//run the appropriate build function for this docker-compose file
 	//Lets name the image this name
-	sApplication.Image = path.Base(sApplication.DockerfilePath)
+	baseImage := path.Base(sApplication.DockerfilePath)
 	log.Println("Current Directory", sApplication.DockerfilePath)
 	log.Println("Building: ", sApplication.Name)
 	log.Println("Image: ", sApplication.Image)
@@ -291,11 +304,12 @@ func buildImageViaCLI(sApplication *ApplicationData) bool {
 
 	//Run Build Command
 	buildCommand := exec.Command("docker-compose", sApplication.DockercomposeBuildCmd...)
-	_, err := buildCommand.CombinedOutput()
+	buildOutput, err := buildCommand.CombinedOutput()
 	if err != nil {
-		panic(err)
+		panic(buildOutput)
 	}
 
+	log.Println(string(buildOutput))
 	//Sleep for 3 seconds so that the container can be finalized by docker
 	time.Sleep(3 * time.Second)
 	//TODO: after building the image who knows how
@@ -309,15 +323,12 @@ forever_loop:
 	for {
 		for _, image := range images {
 			for _, tag := range image.RepoTags {
-				if tag == sApplication.Image || tag == fmt.Sprintf("%s:latest", sApplication.Image) {
+				if tag == baseImage || tag == fmt.Sprintf("%s:latest", baseImage) {
 					log.Println("Found image", tag, sApplication.Image)
 					break forever_loop
 				}
 			}
 		}
-	}
-	if removeTmpDockerfile(sApplication) == false {
-		panic(fmt.Sprintf("Could not remove tmpDockerfile: %s", sApplication.DockerfilePath))
 	}
 	return response
 }
@@ -382,6 +393,7 @@ func ReplaceStringInFile(sApplicationData *ApplicationData, bitbucketObject Bitb
 	if err != nil {
 		log.Print("Error Writing", err)
 	}
+	log.Println("Created New TmpDockerfile", tmpFilePath)
 	return newString
 }
 func logit(jsonByteArray []byte) {

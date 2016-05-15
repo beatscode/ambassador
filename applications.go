@@ -23,6 +23,7 @@ type ApplicationData struct {
 	VolumeBinds           []string `json:"volumebinds"`
 	DockercomposeBuildCmd []string `json:"dockercomposebuildcmd"`
 	DockercomposeTestCmd  []string `json:"dockercomposetestcmd"`
+	DockercomposeRunCmd   []string `json:"dockercomposeruncmd"`
 }
 
 //SetTestMode sets the mode of the application when executing Payload
