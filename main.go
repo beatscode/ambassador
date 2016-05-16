@@ -237,7 +237,7 @@ func ExecutePayload(sApplicationData ApplicationData, bitbucketObject BitbucketP
 		//Push new container to registry
 		log.Println("Docker push ", sApplicationData.Image)
 		log.Println(sApplicationData.Image)
-		pushCommand := exec.Command("docker", "push", sApplicationData.Image)
+		pushCommand := exec.Command("docker", "push", fmt.Sprintf("%s:%s", sApplicationData.Image, strings.ToLower(bitbucketObject.GetBranchName())))
 		pushOutput, err := pushCommand.CombinedOutput()
 		if err != nil {
 			panic(err)
