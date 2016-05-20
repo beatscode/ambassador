@@ -112,7 +112,7 @@ func AppchangeHandler(w http.ResponseWriter, r *http.Request) {
 	sApplicationData = findManifestByName(bitbucketObject.GetRepositoryName())
 	log.Println("sApplicationData", sApplicationData)
 	if &sApplicationData != nil {
-		ExecutePayload(sApplicationData, bitbucketObject)
+		go ExecutePayload(sApplicationData, bitbucketObject)
 	}
 
 }
@@ -229,20 +229,31 @@ func ExecutePayload(sApplicationData ApplicationData, bitbucketObject BitbucketP
 		//Start docker compose application
 		log.Println("Starting Docker Compose Application")
 		runCommand := exec.Command("docker-compose", sApplicationData.DockercomposeRunCmd...)
-		_, err := runCommand.CombinedOutput()
+		runOutput, err := runCommand.CombinedOutput()
 		if err != nil {
+			panic(err)
+		}
+		log.Println("Docker Run Output", string(runOutput))
+		newImageTag := fmt.Sprintf("%s:%s", sApplicationData.Image, strings.ToLower(bitbucketObject.GetBranchName()))
+
+		//Tag Image
+		log.Println("Docker tag", sApplicationData.Image, newImageTag)
+		tagCommand := exec.Command("docker", "tag", sApplicationData.Image, newImageTag)
+		tagOutput, err := tagCommand.CombinedOutput()
+		if err != nil {
+			log.Println(string(tagOutput))
 			panic(err)
 		}
 
 		//Push new container to registry
-		log.Println("Docker push ", sApplicationData.Image)
+		log.Println("Docker push ", newImageTag)
 		log.Println(sApplicationData.Image)
-		pushCommand := exec.Command("docker", "push", fmt.Sprintf("%s:%s", sApplicationData.Image, strings.ToLower(bitbucketObject.GetBranchName())))
+		pushCommand := exec.Command("docker", "push", newImageTag)
 		pushOutput, err := pushCommand.CombinedOutput()
 		if err != nil {
+			log.Println(string(pushOutput))
 			panic(err)
 		}
-		log.Println(string(pushOutput))
 
 		if sApplicationData.HasTest && sApplicationData.IsTesting == false {
 			go TestApplication(sApplicationData, bitbucketObject)
