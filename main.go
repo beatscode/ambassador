@@ -233,7 +233,9 @@ func ExecutePayload(sApplicationData ApplicationData, bitbucketObject BitbucketP
 		if err != nil {
 			panic(err)
 		}
+
 		log.Println("Docker Run Output", string(runOutput))
+		//Build new image tag
 		newImageTag := fmt.Sprintf("%s:%s", sApplicationData.Image, strings.ToLower(bitbucketObject.GetBranchName()))
 
 		//Tag Image
@@ -326,21 +328,6 @@ func buildImageViaCLI(sApplication *ApplicationData) bool {
 	//TODO: after building the image who knows how
 	//long it will take to Finished
 
-	images, err := docker.ListImages(false)
-	if err != nil {
-		log.Println(err)
-	}
-forever_loop:
-	for {
-		for _, image := range images {
-			for _, tag := range image.RepoTags {
-				if tag == baseImage || tag == fmt.Sprintf("%s:latest", baseImage) {
-					log.Println("Found image", tag, sApplication.Image)
-					break forever_loop
-				}
-			}
-		}
-	}
 	return response
 }
 
